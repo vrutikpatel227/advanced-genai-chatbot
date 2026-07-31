@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+database/*.db
+data/*.log
+uploads/*
+!uploads/.gitkeep
+vector_store/*
+!vector_store/.gitkeep
+.streamlit/secrets.toml
+.pytest_cache/
