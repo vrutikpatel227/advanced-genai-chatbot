@@ -10,6 +10,9 @@ from .layout import render_page_header, render_sidebar
 from .chat import render_chat_history, render_chat_input
 from .placeholder import render_placeholder_page
 from .navigation import PAGES, NavPage, get_page
+from .sentiment_panel import render_sentiment_panel
+from .dashboard import render_sentiment_dashboard
+from .about import render_about_page
 
 __all__ = [
     "render_page_header",
@@ -20,4 +23,7 @@ __all__ = [
     "PAGES",
     "NavPage",
     "get_page",
+    "render_sentiment_panel",
+    "render_sentiment_dashboard",
+    "render_about_page",
 ]

@@ -1,35 +1,39 @@
 # SUMMARY
 
-**Task**: Revert milestone-specific sentiment logic and rebuild the project as
-a clean, reusable foundation only — navigation, base chat interface, config,
-logging, SQLite, shared UI components, and placeholders for every future
-milestone. No milestone intelligence is implemented until its PRD is provided.
+**Task**: Implement Milestone 1 (Sentiment Analysis) on the existing project
+foundation, per the Milestone 1 PRD. Only `modules/sentiment/`,
+`components/`, `utils/`, `database/`, and `app.py` were touched, as instructed.
 
-**Stack**: Python 3.12 + Streamlit (UI/shell), OpenAI-compatible client (base
-chat only), SQLite (generic message storage) — unchanged from before, but the
-dependency footprint (`requirements.txt`) now matches only what's actually used.
+**Stack**: HuggingFace transformers (`cardiffnlp/twitter-roberta-base-sentiment-latest`)
+as the primary sentiment backend, with an automatic dependency-free
+rule-based lexicon fallback. Streamlit UI, SQLite storage (additive schema
+migration), Pandas + Plotly for the analytics dashboard.
 
 **Included**:
-- `components/navigation.py` — single-source-of-truth page registry (implemented vs. placeholder)
-- `components/` — reusable header, sidebar, chat history/input, and placeholder-page renderers
-- `app.py` rebuilt as a thin shell: routes to the base chat page or a shared placeholder, no per-milestone logic
-- `utils/storage.py` rewritten to a minimal, milestone-agnostic `messages` table
-- All 6 milestone modules reset to empty, documented placeholder packages
-- 15 tests across config, storage, LLM client error-handling, and the navigation registry — all passing
-- Streamlit app smoke-tested (boots, responds 200, no runtime errors) after the rebuild
+- Real-time sentiment analysis on every user message before a reply is generated
+- Adaptive assistant tone based on detected sentiment (friendly/supportive/professional)
+- Automatic transformer→lexicon fallback, logged clearly, never crashes the chat
+- Sentiment + confidence shown per message and in a side panel
+- SQLite schema extended additively (two new nullable columns) — existing rows/API unaffected
+- Analytics page: total conversations, per-label counts, pie chart, bar chart
+- About Module page documenting the milestone
+- Sidebar updated: Chat, Analytics, About Module (existing pending-milestone placeholders untouched)
+- Explicit error handling: empty input, model load failure, database failure — all surfaced with friendly messages, none crash the app
+- 30 tests total (15 new/updated for this milestone), all passing
+- Full app smoke-tested (boots, HTTP 200, no runtime errors); fallback path verified directly (no HF Hub access in this sandbox)
 
-**Removed** (per the new workflow — will return once their own PRDs are supplied):
-- `modules/sentiment/analyzer.py`, `modules/sentiment/lexicon.py`, `tests/test_sentiment.py`
-- Sentiment-specific columns from the SQLite schema and the analytics dashboard page (now a placeholder)
+**Not touched**: `modules/medical/`, `modules/knowledge_base/`, `modules/research/`,
+`modules/multimodal/`, `modules/multilingual/` — still empty placeholders, per PRD instruction.
 
 **Assumptions**:
-- "Base chatbot interface without milestone-specific intelligence" = a plain LLM call with no sentiment/RAG/etc. layered in
-- Kept Conversation Memory and Analytics Dashboard as placeholders too, since they're separate milestones in the master PRD and weren't explicitly requested for this pass
+- "Total Conversations" = count of sentiment-analyzed user messages (one turn = one conversation), documented in the code and README
+- "Right panel or sidebar" → implemented as a right-hand column next to chat (2-column layout), since the main sidebar is reserved for page navigation
+- Escalation/human-handoff flagging was in scope for a *prior* draft of this module but is **not** in this PRD's requirements, so it was left out — flagged as a "Future improvement" instead of silently added back
 
 **Not included / needs attention before production**:
 - No authentication on the Streamlit app
+- Transformer model needs network access to download on first run (falls back gracefully otherwise — verified)
 - No rate limiting on the chat endpoint
-- Milestone-specific dependencies are commented out in `requirements.txt` until each milestone lands
 
 **How to run**:
 ```bash

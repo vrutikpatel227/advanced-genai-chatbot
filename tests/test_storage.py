@@ -78,3 +78,46 @@ def test_sessions_are_isolated():
 
     assert len(storage.get_session_messages(s1)) == 1
     assert storage.get_session_messages(s1)[0]["content"] == "message for session one"
+
+
+# --- Milestone 1: Sentiment Analysis storage additions ---
+
+def test_save_message_with_sentiment_metadata():
+    session_id = str(uuid.uuid4())
+    storage.save_message(session_id, "user", "I love this!", sentiment_label="positive", sentiment_confidence=0.97)
+    storage.save_message(session_id, "assistant", "Glad to hear it!")
+
+    messages = storage.get_session_messages(session_id)
+    assert messages[0]["sentiment_label"] == "positive"
+    assert messages[0]["sentiment_confidence"] == pytest.approx(0.97)
+    # Assistant messages don't carry sentiment metadata.
+    assert messages[1]["sentiment_label"] is None
+
+
+def test_get_sentiment_summary_counts_by_label():
+    session_id = str(uuid.uuid4())
+    storage.save_message(session_id, "user", "great!", sentiment_label="positive", sentiment_confidence=0.9)
+    storage.save_message(session_id, "user", "terrible.", sentiment_label="negative", sentiment_confidence=0.8)
+    storage.save_message(session_id, "user", "what time do you open?", sentiment_label="neutral", sentiment_confidence=0.6)
+    storage.save_message(session_id, "user", "amazing service!", sentiment_label="positive", sentiment_confidence=0.95)
+
+    summary = storage.get_sentiment_summary()
+    assert summary["positive"] == 2
+    assert summary["negative"] == 1
+    assert summary["neutral"] == 1
+
+
+def test_get_total_conversations_counts_analyzed_user_messages():
+    session_id = str(uuid.uuid4())
+    storage.save_message(session_id, "user", "hi", sentiment_label="neutral", sentiment_confidence=0.5)
+    storage.save_message(session_id, "assistant", "hello!")  # not counted: assistant role
+    storage.save_message(session_id, "user", "unanalyzed message")  # not counted: no sentiment_label
+
+    assert storage.get_total_conversations() == 1
+
+
+def test_messages_without_sentiment_are_excluded_from_summary():
+    session_id = str(uuid.uuid4())
+    storage.save_message(session_id, "user", "message with no sentiment recorded")
+    summary = storage.get_sentiment_summary()
+    assert summary == {}

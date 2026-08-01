@@ -19,8 +19,10 @@ def test_app_config_has_sensible_defaults():
 
 
 def test_llm_config_defaults_present():
-    assert llm_config.model
-    assert llm_config.base_url.startswith("http")
+    # model="" is a valid default meaning "use the provider's own default model".
+    assert isinstance(llm_config.model, str)
+    assert llm_config.provider in {"openai", "groq", "gemini"}
+    assert llm_config.openai_base_url.startswith("http")
     assert llm_config.temperature >= 0
     assert llm_config.max_tokens > 0
 

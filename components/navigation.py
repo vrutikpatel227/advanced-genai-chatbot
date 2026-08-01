@@ -25,13 +25,19 @@ PAGES: list[NavPage] = [
         key="chat",
         label="💬 Chat",
         implemented=True,
-        description="Base conversational interface.",
+        description="Conversational interface with real-time sentiment analysis.",
     ),
     NavPage(
-        key="sentiment",
-        label="🙂 Sentiment Analysis",
-        implemented=False,
-        description="Will score customer messages as positive, negative, or neutral.",
+        key="analytics",
+        label="📊 Analytics",
+        implemented=True,
+        description="Sentiment analytics: conversation totals and sentiment distribution.",
+    ),
+    NavPage(
+        key="about_sentiment",
+        label="ℹ️ About Module",
+        implemented=True,
+        description="Details about the Sentiment Analysis module (Milestone 1).",
     ),
     NavPage(
         key="medical",
@@ -68,12 +74,6 @@ PAGES: list[NavPage] = [
         label="🧠 Conversation Memory",
         implemented=False,
         description="Will let the bot recall context across sessions.",
-    ),
-    NavPage(
-        key="dashboard",
-        label="📊 Analytics Dashboard",
-        implemented=False,
-        description="Will visualize usage and (once available) per-milestone metrics.",
     ),
 ]
 

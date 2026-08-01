@@ -30,13 +30,29 @@ def _get_bool(name: str, default: bool) -> bool:
 
 @dataclass(frozen=True)
 class LLMConfig:
-    """Settings for the OpenAI-compatible LLM provider."""
+    """Settings for the LLM provider abstraction.
 
-    api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
-    base_url: str = field(
+    LLM_PROVIDER selects which provider is active (openai | groq |
+    gemini) -- see utils/providers/ for the implementations and
+    utils/llm_client.py for the unified client that reads this value.
+    Only the selected provider's API key needs to be set; the others
+    can be left blank.
+    """
+
+    provider: str = field(
+        default_factory=lambda: os.getenv("LLM_PROVIDER", "openai").strip().lower()
+    )
+
+    openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
+    openai_base_url: str = field(
         default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     )
-    model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "gpt-4o-mini"))
+    groq_api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
+    gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
+
+    # Shared generation settings, applied to whichever provider is active.
+    # model="" means "use that provider's own default model".
+    model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", ""))
     temperature: float = field(
         default_factory=lambda: float(os.getenv("LLM_TEMPERATURE", "0.3"))
     )

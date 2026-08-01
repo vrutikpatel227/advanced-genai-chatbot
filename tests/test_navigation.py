@@ -21,12 +21,18 @@ def test_chat_page_is_implemented():
     assert chat.implemented is True
 
 
-def test_all_milestone_pages_are_not_yet_implemented():
-    milestone_keys = {
-        "sentiment", "medical", "knowledge_base", "research",
-        "multimodal", "multilingual", "memory", "dashboard",
+def test_milestone1_pages_are_implemented():
+    for key in ("chat", "analytics", "about_sentiment"):
+        page = get_page(key)
+        assert page.implemented is True, f"{key} should be implemented after Milestone 1"
+
+
+def test_remaining_milestone_pages_are_not_yet_implemented():
+    pending_keys = {
+        "medical", "knowledge_base", "research",
+        "multimodal", "multilingual", "memory",
     }
-    for key in milestone_keys:
+    for key in pending_keys:
         page = get_page(key)
         assert page.implemented is False, f"{key} should not be marked implemented yet"
 

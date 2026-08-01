@@ -1,28 +1,55 @@
 """
 utils/llm_client.py
 
-Thin wrapper around an OpenAI-compatible chat completion API.
-Centralized so every module (chat, RAG, research assistant, etc. in
-later milestones) calls the LLM through the same, error-handled path
-instead of each writing its own HTTP/SDK code.
+Unified, provider-agnostic LLM client. Every module (the base chat
+page, sentiment-adaptive replies, and every future milestone) calls
+get_chat_completion() -- none of them know or care which provider
+(OpenAI, Groq, Gemini, ...) is actually selected. The active provider
+is chosen purely by the LLM_PROVIDER environment variable; see
+config.py for the setting and utils/providers/ for the implementations.
+
+Public API is intentionally unchanged from before this refactor
+(ChatMessage, is_configured(), get_chat_completion(),
+LLMConfigurationError, LLMRequestError) so no calling code
+(app.py, components/) needed to change.
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
+from functools import lru_cache
 
 from config import llm_config
 from utils.logger import get_logger
+from utils.providers import (
+    SUPPORTED_PROVIDERS,
+    ProviderAuthError,
+    ProviderConnectionError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+    build_provider,
+)
 
 logger = get_logger(__name__)
 
+_KEY_HINT_BY_PROVIDER = {
+    "openai": "OPENAI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+}
+
 
 class LLMConfigurationError(RuntimeError):
-    """Raised when the LLM cannot be called due to missing configuration."""
+    """Raised when the LLM cannot be called due to missing/invalid
+    configuration: an unknown LLM_PROVIDER value, or the selected
+    provider's API key isn't set."""
 
 
 class LLMRequestError(RuntimeError):
-    """Raised when the LLM API call itself fails (network, API error, timeout)."""
+    """Raised when the LLM API call itself fails: network failure,
+    rate limit, timeout, or any other provider-side error."""
 
 
 @dataclass(frozen=True)
@@ -31,41 +58,110 @@ class ChatMessage:
     content: str
 
 
+@lru_cache(maxsize=1)
+def _get_provider():
+    """Build (and cache) the provider selected by LLM_PROVIDER.
+
+    Cached because provider selection only changes when the process is
+    restarted with a different .env -- never mid-run. Raises ValueError
+    for an unknown provider name; callers below translate that into
+    LLMConfigurationError.
+    """
+    return build_provider(llm_config.provider)
+
+
+def validate_configuration() -> tuple[bool, str]:
+    """Startup/runtime validation: is the selected provider recognized,
+    and does it have the API key it needs? Never raises -- always
+    returns (is_valid, message) so callers can show a friendly message
+    instead of crashing the app.
+    """
+    provider_name = (llm_config.provider or "").strip().lower()
+
+    if provider_name not in SUPPORTED_PROVIDERS:
+        return False, (
+            f"Invalid LLM_PROVIDER: '{llm_config.provider}'. "
+            f"Supported providers: {', '.join(SUPPORTED_PROVIDERS)}."
+        )
+
+    provider = _get_provider()
+
+    if not provider.is_configured():
+        key_hint = _KEY_HINT_BY_PROVIDER.get(provider_name, f"{provider_name.upper()}_API_KEY")
+        return False, (
+            f"No API key set for provider '{provider_name}'. "
+            f"Set {key_hint} in your .env file."
+        )
+
+    model_name = llm_config.model or provider.default_model
+    return True, f"LLM provider '{provider_name}' configured (model: {model_name})."
+
+
 def is_configured() -> bool:
-    """Whether an API key is present. UI should check this before calling."""
-    return bool(llm_config.api_key)
+    """Whether the selected provider is valid and has its API key set.
+    UI should check this before calling get_chat_completion()."""
+    is_valid, _ = validate_configuration()
+    return is_valid
 
 
 def get_chat_completion(messages: list[ChatMessage]) -> str:
-    """Send a chat completion request and return the assistant's text reply.
+    """Send a chat completion request through the currently selected
+    provider and return the assistant's text reply.
 
-    Raises LLMConfigurationError if no API key is set, and
-    LLMRequestError if the call fails for any other reason. Callers
-    (the Streamlit UI) are expected to catch these and show a friendly
+    Raises LLMConfigurationError if the provider is invalid or missing
+    its API key, and LLMRequestError if the call itself fails (network,
+    rate limit, timeout, or any other provider error). Callers (the
+    Streamlit UI) are expected to catch these and show a friendly
     message rather than letting the app crash.
     """
-    if not is_configured():
-        raise LLMConfigurationError(
-            "No LLM API key configured. Set OPENAI_API_KEY in your .env file."
-        )
+    is_valid, message = validate_configuration()
+    if not is_valid:
+        raise LLMConfigurationError(message)
 
-    try:
-        from openai import OpenAI
-    except ImportError as exc:
-        raise LLMRequestError(
-            "The 'openai' package is not installed. Run: pip install openai"
-        ) from exc
+    provider = _get_provider()
+    provider_messages = [{"role": m.role, "content": m.content} for m in messages]
+    model_name = llm_config.model or provider.default_model
 
+    start = time.monotonic()
     try:
-        client = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
-        response = client.chat.completions.create(
-            model=llm_config.model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],
+        reply = provider.generate(
+            provider_messages,
+            model=model_name,
             temperature=llm_config.temperature,
             max_tokens=llm_config.max_tokens,
             timeout=llm_config.request_timeout,
         )
-        return response.choices[0].message.content or ""
-    except Exception as exc:  # noqa: BLE001 - any SDK/network failure surfaces uniformly
-        logger.error("LLM request failed: %s", exc)
-        raise LLMRequestError(f"LLM request failed: {exc}") from exc
+        elapsed = time.monotonic() - start
+        logger.info(
+            "LLM request succeeded | provider=%s | model=%s | elapsed=%.2fs",
+            provider.name, model_name, elapsed,
+        )
+        return reply
+    except ProviderAuthError as exc:
+        logger.error("LLM configuration error | provider=%s | %s", provider.name, exc)
+        raise LLMConfigurationError(str(exc)) from exc
+    except (ProviderRateLimitError, ProviderTimeoutError, ProviderConnectionError, ProviderError) as exc:
+        elapsed = time.monotonic() - start
+        logger.error(
+            "LLM request failed | provider=%s | elapsed=%.2fs | %s",
+            provider.name, elapsed, exc,
+        )
+        raise LLMRequestError(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - final safety net: never let a raw error escape
+        elapsed = time.monotonic() - start
+        logger.error(
+            "LLM request failed with an unexpected error | provider=%s | elapsed=%.2fs | %s",
+            provider.name, elapsed, exc,
+        )
+        raise LLMRequestError(f"Unexpected error: {exc}") from exc
+
+
+# Startup validation + logging (selected provider, model, and whether
+# configuration is valid) -- runs once when this module is first
+# imported, which happens at application startup (app.py imports this
+# module at the top level). Never raises: only logs.
+_startup_valid, _startup_message = validate_configuration()
+if _startup_valid:
+    logger.info("Startup LLM configuration check: %s", _startup_message)
+else:
+    logger.warning("Startup LLM configuration check failed: %s", _startup_message)
