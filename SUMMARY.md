@@ -1,44 +1,43 @@
 # SUMMARY
 
-**Task**: Implement Milestone 1 (Sentiment Analysis) on the existing project
-foundation, per the Milestone 1 PRD. Only `modules/sentiment/`,
-`components/`, `utils/`, `database/`, and `app.py` were touched, as instructed.
+**Task**: Implement Milestone 2 (Medical Knowledge Assistant / RAG) on the
+existing foundation + Milestone 1 + LLM Provider Abstraction, per the
+Milestone 2 PRD. Scope: `modules/medical/`, `utils/`, `database/`,
+`components/`, `README.md`, `requirements.txt`, `app.py`.
 
-**Stack**: HuggingFace transformers (`cardiffnlp/twitter-roberta-base-sentiment-latest`)
-as the primary sentiment backend, with an automatic dependency-free
-rule-based lexicon fallback. Streamlit UI, SQLite storage (additive schema
-migration), Pandas + Plotly for the analytics dashboard.
+**Stack**: MedQuAD dataset (auto-downloaded from GitHub), LangChain
+(`RecursiveCharacterTextSplitter`), Sentence Transformers (primary
+embeddings) with an automatic TF-IDF fallback, FAISS (vector search),
+reuses the existing configurable LLM provider (Groq/OpenAI/Gemini) --
+never calls any LLM SDK directly.
 
 **Included**:
-- Real-time sentiment analysis on every user message before a reply is generated
-- Adaptive assistant tone based on detected sentiment (friendly/supportive/professional)
-- Automatic transformer→lexicon fallback, logged clearly, never crashes the chat
-- Sentiment + confidence shown per message and in a side panel
-- SQLite schema extended additively (two new nullable columns) — existing rows/API unaffected
-- Analytics page: total conversations, per-label counts, pie chart, bar chart
-- About Module page documenting the milestone
-- Sidebar updated: Chat, Analytics, About Module (existing pending-milestone placeholders untouched)
-- Explicit error handling: empty input, model load failure, database failure — all surfaced with friendly messages, none crash the app
-- 30 tests total (15 new/updated for this milestone), all passing
-- Full app smoke-tested (boots, HTTP 200, no runtime errors); fallback path verified directly (no HF Hub access in this sandbox)
+- Full RAG pipeline: question -> embed -> FAISS search -> top-K context -> grounded LLM answer -> source display
+- System prompt strictly forbids answering from the LLM's own general knowledge
+- Automatic dataset download (single-request GitHub zip, ~16MB) + XML parsing + local JSON caching
+- Automatic FAISS index build/save/load, skips regeneration when the dataset hasn't changed (content fingerprint)
+- Embedding fallback (TF-IDF) mirrors Milestone 1's resilience pattern -- verified genuinely relevant retrieval even via fallback
+- New, separate `medical_queries` SQLite table (additive, doesn't touch the base `messages` table)
+- Sidebar: Chat, Analytics, 🏥 Medical Knowledge Assistant, About Module
+- Educational disclaimer shown on every page load and after every answer
+- Comprehensive error handling: missing/corrupted dataset, embedding failure, empty search results, missing index, API failure, empty/invalid question -- all friendly messages, never crashes
+- 79 tests total (31 new/updated for this milestone), all passing; Milestone 1 + LLM Provider Abstraction confirmed regression-free
 
-**Not touched**: `modules/medical/`, `modules/knowledge_base/`, `modules/research/`,
-`modules/multimodal/`, `modules/multilingual/` — still empty placeholders, per PRD instruction.
+**Real-world verification** (not just unit tests): downloaded and parsed the actual MedQuAD dataset (1,767 QA pairs, 9 sources, ~10s), built and cache-tested the FAISS index (5,658 chunks), ran real retrieval queries with semantically correct results, and verified the full pipeline end-to-end with a mocked LLM call.
 
-**Assumptions**:
-- "Total Conversations" = count of sentiment-analyzed user messages (one turn = one conversation), documented in the code and README
-- "Right panel or sidebar" → implemented as a right-hand column next to chat (2-column layout), since the main sidebar is reserved for page navigation
-- Escalation/human-handoff flagging was in scope for a *prior* draft of this module but is **not** in this PRD's requirements, so it was left out — flagged as a "Future improvement" instead of silently added back
+**Not touched**: `modules/knowledge_base/`, `modules/research/`, `modules/multimodal/`, `modules/multilingual/` -- still empty placeholders. `config.py` (root) was intentionally left untouched since it's outside this PRD's folder scope; Milestone 2 config lives self-contained in `modules/medical/config.py` instead.
+
+**One real bug found and fixed during testing**: the naive "process first N files alphabetically" approach landed entirely inside MedQuAD's ADAM folder, whose answers are blanked out for copyright reasons -- fixed by sampling round-robin across every source category.
 
 **Not included / needs attention before production**:
-- No authentication on the Streamlit app
-- Transformer model needs network access to download on first run (falls back gracefully otherwise — verified)
-- No rate limiting on the chat endpoint
+- Sentence Transformers model needs network access to HuggingFace Hub on first run (falls back gracefully otherwise -- verified)
+- Default file cap (400) indexes ~1,700 QA pairs for fast startup; set `MEDICAL_MAX_SOURCE_FILES=0` for the full ~47k-pair dataset
+- No authentication on the Streamlit app; no rate limiting
 
 **How to run**:
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # then set OPENAI_API_KEY
-streamlit run app.py
+cp .env.example .env   # set LLM_PROVIDER + that provider's key
+streamlit run app.py   # first visit to Medical Knowledge Assistant downloads + indexes automatically
 pytest tests/ -v
 ```

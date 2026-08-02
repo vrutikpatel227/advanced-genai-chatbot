@@ -12,12 +12,18 @@ Analysis) adds two nullable columns -- sentiment_label,
 sentiment_confidence -- via _migrate_add_sentiment_columns(), so
 existing rows and the base message API are unaffected.
 
+Milestone 2 (Medical Knowledge Assistant) adds a new, separate table
+-- "medical_queries" -- rather than columns on "messages", since its
+shape (question, answer, retrieved sources) doesn't fit the generic
+chat message model. This keeps the base messages table untouched.
+
 All queries are parameterized -- never string-interpolate user input
 into SQL.
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -39,6 +45,18 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
+
+CREATE TABLE IF NOT EXISTS medical_queries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    sources_json TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_medical_queries_session ON medical_queries(session_id);
+CREATE INDEX IF NOT EXISTS idx_medical_queries_created ON medical_queries(created_at);
 """
 
 # Additive columns for Milestone 1 (Sentiment Analysis). Kept as a
@@ -180,5 +198,57 @@ def get_total_conversations() -> int:
         cursor = conn.execute(
             "SELECT COUNT(*) as count FROM messages WHERE role = 'user' AND sentiment_label IS NOT NULL"
         )
+        row = cursor.fetchone()
+        return int(row["count"]) if row else 0
+
+
+# --- Milestone 2: Medical Knowledge Assistant -------------------------------------
+
+
+def save_medical_query(
+    session_id: str,
+    question: str,
+    answer: str,
+    sources: Optional[list[dict]] = None,
+) -> None:
+    """Persist a medical Q&A exchange: the question, the generated
+    answer, and the retrieved sources (stored as JSON, since it's a
+    list of {source, question, url, focus, score} dicts, not a single
+    scalar column)."""
+    if not session_id:
+        raise ValueError("session_id is required")
+    if not question or not question.strip():
+        raise ValueError("question is required")
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO medical_queries (session_id, question, answer, sources_json, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                question,
+                answer,
+                json.dumps(sources or []),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+
+
+def get_medical_queries(session_id: str) -> list[sqlite3.Row]:
+    """Return all medical Q&A exchanges for a session, oldest first."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT * FROM medical_queries WHERE session_id = ? ORDER BY id ASC",
+            (session_id,),
+        )
+        return cursor.fetchall()
+
+
+def get_medical_query_count() -> int:
+    """Total medical questions answered, across all sessions."""
+    with get_connection() as conn:
+        cursor = conn.execute("SELECT COUNT(*) as count FROM medical_queries")
         row = cursor.fetchone()
         return int(row["count"]) if row else 0

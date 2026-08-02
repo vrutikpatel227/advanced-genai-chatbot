@@ -3,8 +3,9 @@
 A single, modular, production-quality customer service bot, built incrementally
 across independent internship milestones on top of one shared codebase.
 
-**Status: Milestone 1 (Sentiment Analysis) complete. LLM Provider Abstraction
-(architectural enhancement, not a milestone) complete.**
+**Status: Milestone 1 (Sentiment Analysis) complete. Milestone 2 (Medical
+Knowledge Assistant / RAG) complete. LLM Provider Abstraction (architectural
+enhancement, not a milestone) complete.**
 
 Each milestone (Sentiment Analysis, Medical RAG, Dynamic Knowledge Base,
 Research Paper Assistant, Multimodal AI, Multilingual Support, Conversation
@@ -145,11 +146,122 @@ side panel) and the Analytics dashboard here before sharing externally._
 - Configurable confidence threshold surfaced in the UI (currently env-only)
 - Multi-label / mixed-sentiment detection for longer messages
 
+## Milestone 2: Medical Knowledge Assistant (RAG)
+
+### Feature overview
+
+- **Retrieval-Augmented Generation** — every medical question is answered
+  using retrieved passages from the MedQuAD medical knowledge base, never
+  from the LLM's own unguided knowledge. The system prompt explicitly
+  instructs the model to answer only from retrieved context and to say so
+  honestly when the context is insufficient.
+- **Automatic dataset loading** — the MedQuAD dataset downloads
+  automatically on first run (from the official GitHub repository, a
+  single-request zip download) and is cached locally; no manual dataset
+  setup required. Corrupted individual files are skipped with a logged
+  warning rather than aborting the whole load.
+- **Reusable processing pipeline** — text cleaning + chunking (via
+  LangChain's `RecursiveCharacterTextSplitter`) with metadata (question,
+  topic, source, URL) preserved on every chunk.
+- **Embeddings with automatic fallback** — primary: Sentence Transformers
+  (`sentence-transformers/all-MiniLM-L6-v2`); automatic fallback: a local
+  TF-IDF vectorizer, used transparently if the transformer model can't be
+  downloaded (mirrors Milestone 1's sentiment analyzer resilience pattern,
+  and satisfies the PRD's "embedding failure" error-handling requirement).
+- **FAISS vector search** — builds automatically on first run, loads from
+  disk on subsequent runs, and **skips regeneration entirely** if the
+  underlying dataset hasn't changed (detected via a content fingerprint).
+- **Uses the existing configurable LLM provider** — no direct Groq/OpenAI
+  SDK calls; the same `utils/llm_client.py` from the LLM Provider
+  Abstraction is reused, so this milestone works with whichever provider
+  is selected in `.env`.
+- **Source attribution** — every answer displays which knowledge-base
+  entries (source dataset, topic, relevance score) it was grounded in.
+- **Conversation storage** — every medical Q&A exchange (question, answer,
+  sources, timestamp) is saved to a new, separate SQLite table
+  (`medical_queries`), reusing the existing database layer without
+  touching the base `messages` table.
+- **Educational disclaimer** — shown on every page load and after every
+  answer: this assistant does not provide professional medical advice.
+- **Sidebar**: Chat, Analytics, Medical Knowledge Assistant, About Module
+  (plus the existing "coming soon" placeholders for pending milestones).
+
+### Installation
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env
+# edit .env: set LLM_PROVIDER + that provider's API key (as before).
+# No medical-specific setup is required -- see "Dataset setup" below.
+```
+
+### Dataset setup
+
+No manual setup needed. On first visit to the Medical Knowledge Assistant
+page, the app automatically:
+1. Downloads the [MedQuAD dataset](https://github.com/abachaa/MedQuAD)
+   (~16 MB zip, single request) to `data/medical/medquad_raw/`.
+2. Parses and caches it to `data/medical/medquad_processed.json`.
+3. Builds a FAISS index in `vector_store/medical/`.
+
+All of this is skipped on subsequent runs (cached), and none of these
+generated files are committed to git (see `.gitignore`).
+
+**Configuration (optional, all in `.env`):**
+```bash
+MEDICAL_DATASET_DIR=                  # default: data/medical/medquad_raw
+MEDICAL_MAX_SOURCE_FILES=400          # 0 = process the full ~47k-pair dataset
+MEDICAL_CHUNK_SIZE=800
+MEDICAL_CHUNK_OVERLAP=120
+MEDICAL_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+MEDICAL_TOP_K=4
+MEDICAL_MIN_SIMILARITY=0.05
+```
+`MEDICAL_MAX_SOURCE_FILES` is a dev-speed knob, not a hard limitation:
+raise it (or set to `0`) to index the complete dataset -- the default of
+400 files (sampled round-robin across every source category, ~1,700+ QA
+pairs) keeps first-run indexing under a minute.
+
+### How RAG works
+
+```
+Question
+  -> embed (Sentence Transformers, or TF-IDF if that's unavailable)
+  -> search FAISS index for the most similar chunks
+  -> take the top-K (default 4) above a minimum similarity
+  -> build a prompt that includes only those retrieved passages
+  -> send to the configured LLM provider (Groq/OpenAI/Gemini)
+  -> display the answer + which sources it came from
+```
+
+If no chunk meets the similarity threshold, the LLM is told explicitly
+that no relevant context was found, so it can say so rather than guessing.
+
+### Running the application
+
+```bash
+streamlit run app.py
+```
+
+Open the sidebar → **🏥 Medical Knowledge Assistant**, wait for the
+knowledge base to load (first run only), then ask a question like *"What
+are the symptoms of diabetes?"*. The answer, its sources, and the
+educational disclaimer all display on the page.
+
+### Future improvements
+
+- Let users adjust Top-K / similarity threshold from the UI
+- Show a confidence indicator based on retrieval score, not just LLM output
+- Support incremental dataset updates without a full rebuild
+- Surface which embedding backend is active in the sidebar (not just the page)
+
 ## Project structure
 
 ```
 advanced-genai-chatbot/
-├── app.py                        # Streamlit entry point: navigation + chat + analytics + about
+├── app.py                        # Streamlit entry point: navigation + chat + analytics + about + medical
 ├── config.py                      # Centralized, env-driven configuration
 ├── requirements.txt
 ├── .env.example
@@ -166,14 +278,23 @@ advanced-genai-chatbot/
 │   │   ├── analyzer.py                # SentimentAnalyzer (transformer + lexicon fallback)
 │   │   ├── lexicon.py                  # Rule-based fallback scorer
 │   │   └── response_style.py            # Sentiment -> tone instructions
-│   ├── medical/                     # Not yet implemented
+│   ├── medical/                     # Milestone 2: implemented
+│   │   ├── config.py                   # Self-contained, env-driven config for this milestone
+│   │   ├── loader.py                    # MedQuAD download + XML parsing + caching
+│   │   ├── preprocess.py                 # Text cleaning + chunking (LangChain)
+│   │   ├── embeddings.py                  # Sentence Transformers + TF-IDF fallback
+│   │   ├── vector_store.py                 # FAISS index build/save/load
+│   │   ├── retriever.py                      # Top-K similarity search
+│   │   ├── prompts.py                          # Grounded-answer prompt templates
+│   │   ├── rag_pipeline.py                       # End-to-end orchestration
+│   │   └── medical_chat.py                        # Streamlit page
 │   ├── knowledge_base/               # Not yet implemented
 │   ├── research/                      # Not yet implemented
 │   ├── multimodal/                     # Not yet implemented
 │   └── multilingual/                    # Not yet implemented
 ├── utils/
 │   ├── logger.py                    # Shared logging setup
-│   ├── storage.py                     # SQLite data access (messages + sentiment columns)
+│   ├── storage.py                     # SQLite data access (messages, sentiment, medical_queries)
 │   ├── llm_client.py                    # Unified, provider-agnostic chat completion client
 │   └── providers/                         # LLM provider abstraction
 │       ├── base_provider.py                 # Abstract interface + shared exceptions
@@ -187,7 +308,8 @@ advanced-genai-chatbot/
     ├── test_llm_client.py
     ├── test_llm_providers.py           # LLM Provider Abstraction
     ├── test_navigation.py
-    └── test_sentiment.py                 # Milestone 1
+    ├── test_sentiment.py                 # Milestone 1
+    └── test_medical.py                    # Milestone 2
 ```
 
 ## Running tests
@@ -196,20 +318,25 @@ advanced-genai-chatbot/
 pytest tests/ -v
 ```
 
-50 tests currently pass: config defaults, the storage layer (including
-sentiment columns and summary queries), the LLM provider abstraction
-(provider registry, per-provider error handling, configuration validation,
-provider switching), the navigation registry, and the sentiment analyzer.
+79 tests currently pass: config defaults, the storage layer (sentiment
+columns, medical_queries table, summary queries), the LLM provider
+abstraction, the navigation registry, the sentiment analyzer, and the
+medical RAG pipeline (dataset parsing, chunking, embeddings with fallback,
+vector store build/cache/search, retrieval filtering, prompt construction,
+and end-to-end answer generation with mocked LLM calls). Medical tests use
+small synthetic data -- none require downloading the full dataset or
+network access.
 
 ## Dependencies
 
 `requirements.txt`: Streamlit, `python-dotenv`, `pytest` (foundation);
-`openai` + `groq` (LLM Provider Abstraction — install whichever you'll
-actually use, or both); `transformers` + `torch` (Milestone 1 sentiment
-model); `pandas` + `plotly` (Milestone 1 analytics dashboard).
+`openai` + `groq` (LLM Provider Abstraction); `transformers` + `torch`
+(Milestone 1 sentiment model); `pandas` + `plotly` (Milestone 1 analytics
+dashboard); `sentence-transformers` + `faiss-cpu` + `langchain` +
+`langchain-text-splitters` + `scikit-learn` (Milestone 2 RAG pipeline;
+scikit-learn powers the TF-IDF fallback embedder).
 `google-generativeai` (Gemini) and remaining milestone-specific
-dependencies (LangChain, sentence-transformers, FAISS, Pillow, OpenCV) stay
-commented out until actually needed.
+dependencies (Pillow, OpenCV) stay commented out until actually needed.
 
 ## Development workflow
 
@@ -244,3 +371,16 @@ commented out until actually needed.
 - No authentication/authorization yet (fine for internal/demo use; add
   before any public deployment).
 - No rate limiting on the chat endpoint yet.
+- The medical embedding backend needs network access to download the
+  Sentence Transformers model on first run; in restricted-network
+  environments it transparently uses a local TF-IDF fallback (verified:
+  this dev sandbox has no HuggingFace Hub access, and the fallback path
+  was exercised directly -- retrieval quality is somewhat lower than with
+  real sentence embeddings, but stays functional and grounded).
+- By default, only 400 source files (~1,700+ QA pairs, sampled across every
+  source category) are indexed for fast first-run startup; set
+  `MEDICAL_MAX_SOURCE_FILES=0` to index the complete ~47,000-pair dataset
+  (slower first run, better coverage).
+- The medical assistant does not yet flag when a question falls far
+  outside the knowledge base's coverage beyond the standard "no relevant
+  passages found" notice.

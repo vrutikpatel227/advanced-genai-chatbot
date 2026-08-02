@@ -41,9 +41,9 @@ PAGES: list[NavPage] = [
     ),
     NavPage(
         key="medical",
-        label="🩺 Medical RAG Chatbot",
-        implemented=False,
-        description="Will answer medical questions grounded in a retrieved knowledge base.",
+        label="🏥 Medical Knowledge Assistant",
+        implemented=True,
+        description="Answers medical questions grounded in the MedQuAD knowledge base via RAG.",
     ),
     NavPage(
         key="knowledge_base",

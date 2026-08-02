@@ -121,3 +121,43 @@ def test_messages_without_sentiment_are_excluded_from_summary():
     storage.save_message(session_id, "user", "message with no sentiment recorded")
     summary = storage.get_sentiment_summary()
     assert summary == {}
+
+
+# --- Milestone 2: Medical Knowledge Assistant storage additions ---
+
+def test_save_and_retrieve_medical_query():
+    session_id = str(uuid.uuid4())
+    sources = [{"source": "NIDDK", "question": "What are the symptoms of diabetes?", "url": "", "focus": "Diabetes", "score": 0.8}]
+    storage.save_medical_query(session_id, "What are the symptoms of diabetes?", "Thirst and fatigue.", sources)
+
+    queries = storage.get_medical_queries(session_id)
+    assert len(queries) == 1
+    assert queries[0]["question"] == "What are the symptoms of diabetes?"
+    assert queries[0]["answer"] == "Thirst and fatigue."
+    assert "NIDDK" in queries[0]["sources_json"]
+
+
+def test_save_medical_query_requires_session_id():
+    with pytest.raises(ValueError):
+        storage.save_medical_query("", "A question?", "An answer.")
+
+
+def test_save_medical_query_requires_question():
+    with pytest.raises(ValueError):
+        storage.save_medical_query(str(uuid.uuid4()), "", "An answer.")
+
+
+def test_medical_query_count():
+    s1, s2 = str(uuid.uuid4()), str(uuid.uuid4())
+    storage.save_medical_query(s1, "Q1?", "A1")
+    storage.save_medical_query(s1, "Q2?", "A2")
+    storage.save_medical_query(s2, "Q3?", "A3")
+    assert storage.get_medical_query_count() == 3
+
+
+def test_medical_queries_do_not_affect_base_messages_table():
+    session_id = str(uuid.uuid4())
+    storage.save_medical_query(session_id, "Q?", "A")
+    # The generic messages table is untouched by medical queries.
+    assert storage.get_message_count() == 0
+    assert storage.get_medical_query_count() == 1

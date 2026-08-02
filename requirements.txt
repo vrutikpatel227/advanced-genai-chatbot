@@ -1,4 +1,3 @@
-# --- Foundation dependencies ---
 streamlit>=1.38,<2.0
 python-dotenv>=1.0,<2.0
 pytest>=8.2,<9.0
@@ -18,13 +17,17 @@ torch>=2.3,<3.0
 pandas>=2.2,<3.0
 plotly>=5.22,<6.0
 
+# --- Milestone 2: Medical Knowledge Assistant (RAG) ---
+sentence-transformers>=3.0,<4.0
+faiss-cpu>=1.8,<2.0
+langchain>=0.2,<0.3
+langchain-text-splitters>=0.2,<0.3
+scikit-learn>=1.5,<2.0
+
 # --- Future milestone dependencies ---
 # Uncomment the relevant lines when that milestone's PRD is implemented,
 # to keep the installed footprint matching what's actually built.
 #
 # google-generativeai>=0.7,<1.0          # LLM Provider: Gemini (placeholder implementation, not yet verified live)
-# langchain>=0.2,<0.3                    # Milestone: RAG / Knowledge Base / Research Assistant
-# sentence-transformers>=3.0,<4.0        # Milestone: RAG / Knowledge Base (embeddings)
-# faiss-cpu>=1.8,<2.0                     # Milestone: RAG / Knowledge Base (vector store)
 # pillow>=10.4,<11.0                       # Milestone: Multimodal AI
 # opencv-python-headless>=4.10,<5.0         # Milestone: Multimodal AI

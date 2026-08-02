@@ -27,9 +27,14 @@ def test_milestone1_pages_are_implemented():
         assert page.implemented is True, f"{key} should be implemented after Milestone 1"
 
 
+def test_milestone2_page_is_implemented():
+    medical = get_page("medical")
+    assert medical.implemented is True
+
+
 def test_remaining_milestone_pages_are_not_yet_implemented():
     pending_keys = {
-        "medical", "knowledge_base", "research",
+        "knowledge_base", "research",
         "multimodal", "multilingual", "memory",
     }
     for key in pending_keys:

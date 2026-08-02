@@ -11,3 +11,10 @@ vector_store/*
 !vector_store/.gitkeep
 .streamlit/secrets.toml
 .pytest_cache/
+
+# Milestone 2: regenerable medical dataset cache + vector index
+# (downloaded/built automatically on first run -- not committed)
+data/medical/medquad_raw/
+data/medical/medquad_processed.json
+vector_store/medical/*
+!vector_store/medical/.gitkeep
