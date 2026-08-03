@@ -32,10 +32,14 @@ def test_milestone2_page_is_implemented():
     assert medical.implemented is True
 
 
+def test_milestone3_page_is_implemented():
+    kb = get_page("knowledge_base")
+    assert kb.implemented is True
+
+
 def test_remaining_milestone_pages_are_not_yet_implemented():
     pending_keys = {
-        "knowledge_base", "research",
-        "multimodal", "multilingual", "memory",
+        "research", "multimodal", "multilingual", "memory",
     }
     for key in pending_keys:
         page = get_page(key)

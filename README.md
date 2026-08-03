@@ -4,8 +4,9 @@ A single, modular, production-quality customer service bot, built incrementally
 across independent internship milestones on top of one shared codebase.
 
 **Status: Milestone 1 (Sentiment Analysis) complete. Milestone 2 (Medical
-Knowledge Assistant / RAG) complete. LLM Provider Abstraction (architectural
-enhancement, not a milestone) complete.**
+Knowledge Assistant / RAG) complete. Milestone 3 (Dynamic Knowledge Base)
+complete. LLM Provider Abstraction (architectural enhancement, not a
+milestone) complete.**
 
 Each milestone (Sentiment Analysis, Medical RAG, Dynamic Knowledge Base,
 Research Paper Assistant, Multimodal AI, Multilingual Support, Conversation
@@ -257,11 +258,114 @@ educational disclaimer all display on the page.
 - Support incremental dataset updates without a full rebuild
 - Surface which embedding backend is active in the sidebar (not just the page)
 
+## Milestone 3: Dynamic Knowledge Base
+
+### Feature overview
+
+- **Upload your own documents** — PDF, TXT, and Markdown (`.md`) are
+  supported today; the format registry in `parser.py` is designed so a
+  new format is one function + one registry entry, not a rewrite.
+- **Incremental indexing** — new documents are embedded and added
+  directly to the existing FAISS index without rebuilding anything else.
+  A separate, explicit **Rebuild Index** button exists for a full
+  from-scratch rebuild when you actually want one (e.g. after changing
+  chunk size).
+- **Immediate searchability** — every newly indexed document becomes
+  searchable right away; try it in the page's own search box.
+- **Duplicate detection** — every upload is hashed (SHA-256); re-uploading
+  the same content (even under a different filename) is detected and
+  skipped with a clear message, never silently re-indexed.
+- **Reuses Milestone 2's RAG infrastructure directly** — `clean_text()`
+  and `SentenceTransformerEmbedder` are imported from `modules/medical/`,
+  not reimplemented. The only genuinely new embedding code is a stateless
+  hashing-vectorizer fallback (`HashingEmbedder`), used instead of
+  Milestone 2's TF-IDF fallback because TF-IDF must be fit on a fixed
+  corpus up front — incompatible with "new documents show up
+  incrementally," which the hashing approach handles natively.
+- **Metadata tracking** — every document's filename, type, content hash,
+  chunk count, and status live in a new, separate `knowledge_documents`
+  SQLite table (additive; doesn't touch `messages` or `medical_queries`).
+- **Update Index vs. Rebuild Index** — "Update" only reprocesses documents
+  left in a non-indexed state (e.g. from an earlier failure); "Rebuild"
+  regenerates the entire index from all stored document text.
+- **Sidebar**: Chat, Analytics, About Module, Medical Knowledge Assistant,
+  Dynamic Knowledge Base (plus remaining "coming soon" placeholders).
+
+### Supported file formats
+
+| Format | Extension | Notes |
+|---|---|---|
+| PDF | `.pdf` | Text extracted per page via `pypdf`; unreadable individual pages are skipped with a warning rather than failing the whole file |
+| Plain text | `.txt` | Decoded as UTF-8, falling back to Latin-1 if needed |
+| Markdown | `.md` | Extracted as plain text; markdown syntax is preserved (not stripped) since it carries useful structure |
+
+Adding a new format later: write one `_extract_<format>()` function in
+`modules/knowledge_base/parser.py`, register it in `_EXTRACTORS`, and add
+its extension to `SUPPORTED_EXTENSIONS` in `config.py` — nothing else
+needs to change.
+
+### Upload workflow
+
+```
+Upload file
+  -> validate (format, size, non-empty)
+  -> hash content (SHA-256) -> check for duplicates -> stop here if found
+  -> extract text (per-format extractor)
+  -> clean + chunk (LangChain, same approach as Milestone 2)
+  -> embed new chunks only (Sentence Transformers, or hashing fallback)
+  -> add to the FAISS index incrementally (existing vectors untouched)
+  -> save extracted text to disk (enables future "Rebuild Index")
+  -> record document metadata in SQLite
+```
+
+### Incremental indexing
+
+Unlike Milestone 2's medical knowledge base (which rebuilds-or-skips
+based on whether its *entire* source dataset changed), the Knowledge
+Base is designed for continuous growth: `KnowledgeVectorStore.add_chunks()`
+embeds only the new document's chunks and appends them to the existing
+FAISS `IndexIDMap`, so uploading document #50 doesn't touch the vectors
+for documents #1–49 at all.
+
+### Knowledge management
+
+- **Knowledge Statistics**: total documents, total chunks, last update
+  time, and vector database status, all reused directly from the new
+  `knowledge_documents` SQLite table.
+- **Document List**: filename, type, upload date, chunk count, and
+  status for every indexed document.
+- **Update Index**: reprocesses only documents not currently marked
+  `"indexed"` — a no-op (with a clear message) when everything is
+  already up to date.
+- **Rebuild Index**: fully regenerates the index from every stored
+  document's saved text — useful after a config change (e.g. chunk
+  size) or if you want to switch from the hashing fallback to real
+  Sentence Transformers embeddings once network access is available.
+
+### Running the application
+
+```bash
+streamlit run app.py
+```
+
+Open the sidebar → **📚 Dynamic Knowledge Base**, upload a PDF/TXT/MD
+file, watch it appear in the document list and statistics, then use the
+search box to confirm it's immediately retrievable.
+
+### Future improvements
+
+- Per-document delete/re-index (currently additive-only; removing a
+  document requires a full rebuild after removing its stored text)
+- Chunk-level preview before confirming an upload
+- Batch/multi-file upload in a single action
+- Support for `.docx` and `.csv` (straightforward given the existing
+  format-registry design)
+
 ## Project structure
 
 ```
 advanced-genai-chatbot/
-├── app.py                        # Streamlit entry point: navigation + chat + analytics + about + medical
+├── app.py                        # Streamlit entry point: navigation + chat + analytics + about + medical + knowledge base
 ├── config.py                      # Centralized, env-driven configuration
 ├── requirements.txt
 ├── .env.example
@@ -288,13 +392,22 @@ advanced-genai-chatbot/
 │   │   ├── prompts.py                          # Grounded-answer prompt templates
 │   │   ├── rag_pipeline.py                       # End-to-end orchestration
 │   │   └── medical_chat.py                        # Streamlit page
-│   ├── knowledge_base/               # Not yet implemented
+│   ├── knowledge_base/               # Milestone 3: implemented
+│   │   ├── config.py                    # Self-contained, env-driven config for this milestone
+│   │   ├── parser.py                     # File validation + text extraction (PDF/TXT/MD)
+│   │   ├── chunker.py                     # Chunking (reuses medical/preprocess.clean_text)
+│   │   ├── embeddings.py                   # Reuses SentenceTransformerEmbedder + new hashing fallback
+│   │   ├── vector_store.py                  # Incremental FAISS add/rebuild/search
+│   │   ├── metadata.py                       # Document metadata + duplicate detection
+│   │   ├── updater.py                         # "Update Index" (pending documents only)
+│   │   ├── manager.py                          # Upload/search/stats orchestration
+│   │   └── knowledge_chat.py                    # Streamlit page
 │   ├── research/                      # Not yet implemented
 │   ├── multimodal/                     # Not yet implemented
 │   └── multilingual/                    # Not yet implemented
 ├── utils/
 │   ├── logger.py                    # Shared logging setup
-│   ├── storage.py                     # SQLite data access (messages, sentiment, medical_queries)
+│   ├── storage.py                     # SQLite data access (messages, sentiment, medical_queries, knowledge_documents)
 │   ├── llm_client.py                    # Unified, provider-agnostic chat completion client
 │   └── providers/                         # LLM provider abstraction
 │       ├── base_provider.py                 # Abstract interface + shared exceptions
@@ -309,7 +422,8 @@ advanced-genai-chatbot/
     ├── test_llm_providers.py           # LLM Provider Abstraction
     ├── test_navigation.py
     ├── test_sentiment.py                 # Milestone 1
-    └── test_medical.py                    # Milestone 2
+    ├── test_medical.py                    # Milestone 2
+    └── test_knowledge_base.py               # Milestone 3
 ```
 
 ## Running tests
@@ -318,14 +432,18 @@ advanced-genai-chatbot/
 pytest tests/ -v
 ```
 
-79 tests currently pass: config defaults, the storage layer (sentiment
-columns, medical_queries table, summary queries), the LLM provider
-abstraction, the navigation registry, the sentiment analyzer, and the
-medical RAG pipeline (dataset parsing, chunking, embeddings with fallback,
-vector store build/cache/search, retrieval filtering, prompt construction,
-and end-to-end answer generation with mocked LLM calls). Medical tests use
-small synthetic data -- none require downloading the full dataset or
-network access.
+114 tests currently pass: config defaults, the storage layer (sentiment
+columns, medical_queries table, knowledge_documents table, summary
+queries), the LLM provider abstraction, the navigation registry, the
+sentiment analyzer, the medical RAG pipeline (dataset parsing, chunking,
+embeddings with fallback, vector store build/cache/search, retrieval
+filtering, prompt construction, end-to-end answer generation with mocked
+LLM calls), and the dynamic knowledge base (file validation, text
+extraction for PDF/TXT/MD, chunking, the hashing fallback embedder,
+incremental vector-store add/persist/rebuild, duplicate detection, and
+the full upload/search/update/rebuild manager workflow). All tests use
+small synthetic data -- none require downloading the full medical
+dataset or network access.
 
 ## Dependencies
 
@@ -334,7 +452,10 @@ network access.
 (Milestone 1 sentiment model); `pandas` + `plotly` (Milestone 1 analytics
 dashboard); `sentence-transformers` + `faiss-cpu` + `langchain` +
 `langchain-text-splitters` + `scikit-learn` (Milestone 2 RAG pipeline;
-scikit-learn powers the TF-IDF fallback embedder).
+scikit-learn also powers Milestone 3's incremental-friendly hashing
+fallback embedder); `pypdf` (Milestone 3 PDF text extraction -- the only
+new dependency this milestone needed, since embeddings/vector
+search/chunking all reuse Milestone 2's already-installed libraries).
 `google-generativeai` (Gemini) and remaining milestone-specific
 dependencies (Pillow, OpenCV) stay commented out until actually needed.
 
@@ -384,3 +505,15 @@ dependencies (Pillow, OpenCV) stay commented out until actually needed.
 - The medical assistant does not yet flag when a question falls far
   outside the knowledge base's coverage beyond the standard "no relevant
   passages found" notice.
+- The Dynamic Knowledge Base is additive-only: there's no per-document
+  delete/remove operation yet. Removing a document today requires
+  manually deleting its stored text file and running "Rebuild Index".
+- Like Milestone 2, the knowledge base's Sentence Transformers backend
+  needs network access on first run; it falls back to a stateless hashing
+  vectorizer otherwise (verified directly — searches remain functional,
+  though semantic quality is lower than real embeddings, which is the
+  expected trade-off for a dependency-free fallback).
+- The "Update Index" button only catches documents left in a non-`indexed`
+  status (e.g. a partial failure); since `process_upload()` already
+  indexes successfully-processed documents immediately, there's normally
+  nothing for it to do — this is by design, not a bug.

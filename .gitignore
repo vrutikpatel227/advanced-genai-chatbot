@@ -18,3 +18,10 @@ data/medical/medquad_raw/
 data/medical/medquad_processed.json
 vector_store/medical/*
 !vector_store/medical/.gitkeep
+
+# Milestone 3: user-uploaded knowledge base documents + vector index
+# (uploaded/built by the user at runtime -- not committed)
+data/knowledge_base/*
+!data/knowledge_base/.gitkeep
+vector_store/knowledge_base/*
+!vector_store/knowledge_base/.gitkeep

@@ -48,8 +48,8 @@ PAGES: list[NavPage] = [
     NavPage(
         key="knowledge_base",
         label="📚 Dynamic Knowledge Base",
-        implemented=False,
-        description="Will let the bot ingest and query documents supplied at runtime.",
+        implemented=True,
+        description="Upload documents and expand the assistant's knowledge with incremental indexing.",
     ),
     NavPage(
         key="research",

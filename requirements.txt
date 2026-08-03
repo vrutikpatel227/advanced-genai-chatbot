@@ -1,3 +1,4 @@
+# --- Foundation dependencies ---
 streamlit>=1.38,<2.0
 python-dotenv>=1.0,<2.0
 pytest>=8.2,<9.0
@@ -23,6 +24,11 @@ faiss-cpu>=1.8,<2.0
 langchain>=0.2,<0.3
 langchain-text-splitters>=0.2,<0.3
 scikit-learn>=1.5,<2.0
+
+# --- Milestone 3: Dynamic Knowledge Base ---
+# Reuses sentence-transformers, faiss-cpu, langchain-text-splitters,
+# and scikit-learn from Milestone 2 above -- only PDF parsing is new.
+pypdf>=4.2,<5.0
 
 # --- Future milestone dependencies ---
 # Uncomment the relevant lines when that milestone's PRD is implemented,

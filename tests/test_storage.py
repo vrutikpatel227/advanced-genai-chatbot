@@ -161,3 +161,48 @@ def test_medical_queries_do_not_affect_base_messages_table():
     # The generic messages table is untouched by medical queries.
     assert storage.get_message_count() == 0
     assert storage.get_medical_query_count() == 1
+
+
+# --- Milestone 3: Dynamic Knowledge Base storage additions ---
+
+def test_save_and_list_kb_document():
+    storage.save_kb_document("doc-1", "policy.txt", ".txt", "hash123", 3)
+    docs = storage.get_all_kb_documents()
+    assert len(docs) == 1
+    assert docs[0]["filename"] == "policy.txt"
+    assert docs[0]["chunk_count"] == 3
+    assert docs[0]["status"] == "indexed"
+
+
+def test_get_kb_document_by_hash_detects_duplicates():
+    storage.save_kb_document("doc-1", "policy.txt", ".txt", "hash123", 3)
+    found = storage.get_kb_document_by_hash("hash123")
+    assert found is not None
+    assert found["filename"] == "policy.txt"
+    assert storage.get_kb_document_by_hash("no-such-hash") is None
+
+
+def test_kb_document_stats():
+    storage.save_kb_document("doc-1", "a.txt", ".txt", "hash-a", 2)
+    storage.save_kb_document("doc-2", "b.md", ".md", "hash-b", 5)
+    assert storage.get_kb_document_count() == 2
+    assert storage.get_kb_chunk_total() == 7
+    assert storage.get_kb_last_update() is not None
+
+
+def test_save_kb_document_requires_doc_id():
+    with pytest.raises(ValueError):
+        storage.save_kb_document("", "a.txt", ".txt", "hash-a", 1)
+
+
+def test_save_kb_document_requires_filename():
+    with pytest.raises(ValueError):
+        storage.save_kb_document("doc-1", "", ".txt", "hash-a", 1)
+
+
+def test_save_kb_document_upsert_updates_existing():
+    storage.save_kb_document("doc-1", "a.txt", ".txt", "hash-a", 2, status="indexed")
+    storage.save_kb_document("doc-1", "a.txt", ".txt", "hash-a", 5, status="indexed")
+    docs = storage.get_all_kb_documents()
+    assert len(docs) == 1  # upsert, not a duplicate row
+    assert docs[0]["chunk_count"] == 5

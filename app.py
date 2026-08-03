@@ -32,6 +32,7 @@ from components import (
     render_sidebar,
 )
 from config import app_config, ensure_directories, sentiment_config
+from modules.knowledge_base import render_knowledge_base_page
 from modules.medical import render_medical_chat_page
 from modules.sentiment import SentimentAnalyzer, get_tone_instructions
 from utils.llm_client import (
@@ -232,6 +233,8 @@ def render_page(page: NavPage) -> None:
         render_about_sentiment_page()
     elif page.key == "medical":
         render_medical_chat_page()
+    elif page.key == "knowledge_base":
+        render_knowledge_base_page()
     else:
         render_placeholder_page(page)
 

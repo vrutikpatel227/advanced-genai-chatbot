@@ -1,8 +1,29 @@
 """
-Placeholder for the Dynamic Knowledge Base milestone.
+modules/knowledge_base
 
-Not yet implemented. This module will be built out once the
-corresponding milestone PRD is provided. Intentionally left as an
-empty, importable package so app.py navigation can reference it
-without error before the real implementation lands.
+Milestone 3: Dynamic Knowledge Base.
+
+Public API:
+    KnowledgeBaseManager       - upload/search/stats/index-control orchestration
+    UploadResult                - result of manager.process_upload()
+    RetrievedKnowledgeChunk      - a single search result
+    render_knowledge_base_page    - the Streamlit page
+    InvalidFileError               - unsupported/oversized/empty file
+    ParsingError                    - text extraction failure
+    VectorStoreError                 - index build/load/search failure
 """
+
+from .knowledge_chat import render_knowledge_base_page
+from .manager import KnowledgeBaseManager, RetrievedKnowledgeChunk, UploadResult
+from .parser import InvalidFileError, ParsingError
+from .vector_store import VectorStoreError
+
+__all__ = [
+    "KnowledgeBaseManager",
+    "UploadResult",
+    "RetrievedKnowledgeChunk",
+    "render_knowledge_base_page",
+    "InvalidFileError",
+    "ParsingError",
+    "VectorStoreError",
+]
