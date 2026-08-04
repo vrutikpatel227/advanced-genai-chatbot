@@ -206,3 +206,68 @@ def test_save_kb_document_upsert_updates_existing():
     docs = storage.get_all_kb_documents()
     assert len(docs) == 1  # upsert, not a duplicate row
     assert docs[0]["chunk_count"] == 5
+
+
+# --- Milestone 4: Research Assistant storage additions ---
+
+def test_save_and_list_research_paper():
+    storage.save_research_paper("paper-1", "study.pdf", "hash-p1", 4)
+    papers = storage.get_all_research_papers()
+    assert len(papers) == 1
+    assert papers[0]["filename"] == "study.pdf"
+    assert papers[0]["chunk_count"] == 4
+    assert papers[0]["status"] == "indexed"
+
+
+def test_get_research_paper_by_hash_detects_duplicates():
+    storage.save_research_paper("paper-1", "study.pdf", "hash-p1", 4)
+    found = storage.get_research_paper_by_hash("hash-p1")
+    assert found is not None
+    assert found["filename"] == "study.pdf"
+    assert storage.get_research_paper_by_hash("no-such-hash") is None
+
+
+def test_get_research_paper_by_doc_id():
+    storage.save_research_paper("paper-1", "study.pdf", "hash-p1", 4)
+    found = storage.get_research_paper_by_doc_id("paper-1")
+    assert found is not None
+    assert found["filename"] == "study.pdf"
+    assert storage.get_research_paper_by_doc_id("nonexistent") is None
+
+
+def test_research_paper_stats():
+    storage.save_research_paper("paper-1", "a.pdf", "hash-a", 3)
+    storage.save_research_paper("paper-2", "b.pdf", "hash-b", 7)
+    assert storage.get_research_paper_count() == 2
+    assert storage.get_research_chunk_total() == 10
+
+
+def test_delete_research_paper_removes_only_that_paper():
+    storage.save_research_paper("paper-1", "a.pdf", "hash-a", 3)
+    storage.save_research_paper("paper-2", "b.pdf", "hash-b", 7)
+
+    deleted = storage.delete_research_paper("paper-1")
+    assert deleted is True
+    assert storage.get_research_paper_count() == 1
+    remaining = storage.get_all_research_papers()
+    assert remaining[0]["doc_id"] == "paper-2"
+
+
+def test_delete_nonexistent_research_paper_returns_false():
+    assert storage.delete_research_paper("nonexistent") is False
+
+
+def test_save_research_paper_requires_doc_id():
+    with pytest.raises(ValueError):
+        storage.save_research_paper("", "a.pdf", "hash-a", 1)
+
+
+def test_save_research_paper_requires_filename():
+    with pytest.raises(ValueError):
+        storage.save_research_paper("paper-1", "", "hash-a", 1)
+
+
+def test_research_papers_do_not_affect_knowledge_documents_table():
+    storage.save_research_paper("paper-1", "a.pdf", "hash-a", 3)
+    assert storage.get_kb_document_count() == 0
+    assert storage.get_research_paper_count() == 1

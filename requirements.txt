@@ -30,6 +30,14 @@ scikit-learn>=1.5,<2.0
 # and scikit-learn from Milestone 2 above -- only PDF parsing is new.
 pypdf>=4.2,<5.0
 
+# --- Milestone 4: Research Assistant ---
+# No new dependencies -- fully reuses sentence-transformers, faiss-cpu,
+# langchain-text-splitters, scikit-learn (Milestone 2) and pypdf
+# (Milestone 3). Per the PRD's explicit reuse instructions, the
+# Research Assistant's PDF parsing, chunking, and embedding pipeline
+# all import directly from modules.knowledge_base rather than adding
+# duplicate packages.
+
 # --- Future milestone dependencies ---
 # Uncomment the relevant lines when that milestone's PRD is implemented,
 # to keep the installed footprint matching what's actually built.

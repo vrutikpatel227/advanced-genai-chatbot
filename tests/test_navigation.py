@@ -37,10 +37,13 @@ def test_milestone3_page_is_implemented():
     assert kb.implemented is True
 
 
+def test_milestone4_page_is_implemented():
+    research = get_page("research")
+    assert research.implemented is True
+
+
 def test_remaining_milestone_pages_are_not_yet_implemented():
-    pending_keys = {
-        "research", "multimodal", "multilingual", "memory",
-    }
+    pending_keys = {"multimodal", "multilingual", "memory"}
     for key in pending_keys:
         page = get_page(key)
         assert page.implemented is False, f"{key} should not be marked implemented yet"

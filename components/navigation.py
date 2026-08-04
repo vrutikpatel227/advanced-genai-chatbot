@@ -53,9 +53,9 @@ PAGES: list[NavPage] = [
     ),
     NavPage(
         key="research",
-        label="🔬 Research Paper Assistant",
-        implemented=False,
-        description="Will summarize and answer questions about uploaded research papers.",
+        label="📄 Research Assistant",
+        implemented=True,
+        description="Upload research papers and get grounded, cited answers via RAG.",
     ),
     NavPage(
         key="multimodal",

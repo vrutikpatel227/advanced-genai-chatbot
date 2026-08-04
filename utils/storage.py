@@ -24,6 +24,12 @@ status). Chunk content/embeddings themselves live in the FAISS vector
 store (modules/knowledge_base/vector_store.py), not here -- this table
 only tracks document-level bookkeeping.
 
+Milestone 4 (Research Assistant) adds one more new, separate table --
+"research_papers" -- tracking uploaded paper metadata. Structurally
+similar to knowledge_documents, but kept as its own table since the
+Research Assistant's paper management (delete, re-index) is a distinct
+feature surface from the Knowledge Base's document management.
+
 All queries are parameterized -- never string-interpolate user input
 into SQL.
 """
@@ -78,6 +84,19 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
 
 CREATE INDEX IF NOT EXISTS idx_kb_documents_hash ON knowledge_documents(content_hash);
 CREATE INDEX IF NOT EXISTS idx_kb_documents_status ON knowledge_documents(status);
+
+CREATE TABLE IF NOT EXISTS research_papers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id TEXT NOT NULL UNIQUE,
+    filename TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    chunk_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'indexed',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_research_papers_hash ON research_papers(content_hash);
+CREATE INDEX IF NOT EXISTS idx_research_papers_status ON research_papers(status);
 """
 
 # Additive columns for Milestone 1 (Sentiment Analysis). Kept as a
@@ -348,3 +367,86 @@ def get_kb_last_update() -> Optional[str]:
         cursor = conn.execute("SELECT MAX(created_at) as latest FROM knowledge_documents")
         row = cursor.fetchone()
         return row["latest"] if row else None
+
+
+# --- Milestone 4: Research Assistant -----------------------------------------------
+
+
+def save_research_paper(
+    doc_id: str,
+    filename: str,
+    content_hash: str,
+    chunk_count: int,
+    status: str = "indexed",
+) -> None:
+    """Record a newly indexed (or re-indexed) research paper."""
+    if not doc_id:
+        raise ValueError("doc_id is required")
+    if not filename:
+        raise ValueError("filename is required")
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO research_papers
+                (doc_id, filename, content_hash, chunk_count, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(doc_id) DO UPDATE SET
+                chunk_count = excluded.chunk_count,
+                status = excluded.status
+            """,
+            (
+                doc_id, filename, content_hash, chunk_count, status,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+
+
+def get_research_paper_by_hash(content_hash: str) -> Optional[sqlite3.Row]:
+    """Duplicate-upload detection, same pattern as the Knowledge Base."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT * FROM research_papers WHERE content_hash = ? LIMIT 1",
+            (content_hash,),
+        )
+        return cursor.fetchone()
+
+
+def get_research_paper_by_doc_id(doc_id: str) -> Optional[sqlite3.Row]:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT * FROM research_papers WHERE doc_id = ? LIMIT 1",
+            (doc_id,),
+        )
+        return cursor.fetchone()
+
+
+def get_all_research_papers() -> list[sqlite3.Row]:
+    """All indexed papers, most recently added first."""
+    with get_connection() as conn:
+        cursor = conn.execute("SELECT * FROM research_papers ORDER BY id DESC")
+        return cursor.fetchall()
+
+
+def delete_research_paper(doc_id: str) -> bool:
+    """Remove a paper's metadata row. Returns True if a row was deleted.
+    Callers are responsible for also removing the paper's vectors from
+    the FAISS index (see modules/research/vector_store.py) and its
+    stored extracted text -- this only handles the SQLite side."""
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM research_papers WHERE doc_id = ?", (doc_id,))
+        return cursor.rowcount > 0
+
+
+def get_research_paper_count() -> int:
+    with get_connection() as conn:
+        cursor = conn.execute("SELECT COUNT(*) as count FROM research_papers")
+        row = cursor.fetchone()
+        return int(row["count"]) if row else 0
+
+
+def get_research_chunk_total() -> int:
+    with get_connection() as conn:
+        cursor = conn.execute("SELECT COALESCE(SUM(chunk_count), 0) as total FROM research_papers")
+        row = cursor.fetchone()
+        return int(row["total"]) if row else 0

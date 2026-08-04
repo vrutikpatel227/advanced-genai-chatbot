@@ -25,3 +25,10 @@ data/knowledge_base/*
 !data/knowledge_base/.gitkeep
 vector_store/knowledge_base/*
 !vector_store/knowledge_base/.gitkeep
+
+# Milestone 4: user-uploaded research papers + vector index
+# (uploaded/built by the user at runtime -- not committed)
+data/research/*
+!data/research/.gitkeep
+vector_store/research/*
+!vector_store/research/.gitkeep

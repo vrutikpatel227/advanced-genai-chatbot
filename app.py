@@ -34,6 +34,7 @@ from components import (
 from config import app_config, ensure_directories, sentiment_config
 from modules.knowledge_base import render_knowledge_base_page
 from modules.medical import render_medical_chat_page
+from modules.research import render_research_assistant_page
 from modules.sentiment import SentimentAnalyzer, get_tone_instructions
 from utils.llm_client import (
     ChatMessage,
@@ -235,6 +236,8 @@ def render_page(page: NavPage) -> None:
         render_medical_chat_page()
     elif page.key == "knowledge_base":
         render_knowledge_base_page()
+    elif page.key == "research":
+        render_research_assistant_page()
     else:
         render_placeholder_page(page)
 

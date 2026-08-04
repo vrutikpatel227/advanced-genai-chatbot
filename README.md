@@ -5,8 +5,8 @@ across independent internship milestones on top of one shared codebase.
 
 **Status: Milestone 1 (Sentiment Analysis) complete. Milestone 2 (Medical
 Knowledge Assistant / RAG) complete. Milestone 3 (Dynamic Knowledge Base)
-complete. LLM Provider Abstraction (architectural enhancement, not a
-milestone) complete.**
+complete. Milestone 4 (Research Assistant) complete. LLM Provider
+Abstraction (architectural enhancement, not a milestone) complete.**
 
 Each milestone (Sentiment Analysis, Medical RAG, Dynamic Knowledge Base,
 Research Paper Assistant, Multimodal AI, Multilingual Support, Conversation
@@ -361,6 +361,105 @@ search box to confirm it's immediately retrievable.
 - Support for `.docx` and `.csv` (straightforward given the existing
   format-registry design)
 
+## Milestone 4: Research Assistant
+
+### Feature overview
+
+- **Upload research papers (PDF)** and ask grounded, cited questions about
+  them, or generate a structured six-section summary.
+- **Maximally reuses Milestone 2 & 3's infrastructure** — per the PRD's
+  explicit "avoid duplicate implementations" instruction: PDF text
+  extraction, chunking, and the embedding pipeline are all imported
+  directly from `modules/knowledge_base/`, not reimplemented. The vector
+  store (`ResearchVectorStore`) **subclasses**
+  `KnowledgeVectorStore` from Milestone 3, inheriting incremental add /
+  save / load / search unchanged.
+- **The one genuinely new capability**: per-paper deletion. Milestone 3's
+  knowledge base is additive-only; the Research Assistant needed
+  "deleting a paper removes its vectors without affecting other indexed
+  papers," so `ResearchVectorStore` adds a single new method
+  (`delete_document()`) using FAISS's native `remove_ids()` — verified
+  directly that deleting one paper leaves every other paper's vectors
+  and search results completely untouched.
+- **Grounded question answering** — every answer is generated strictly
+  from retrieved paper excerpts; the system prompt explicitly instructs
+  the LLM to refuse rather than guess when the evidence is insufficient.
+- **Citations, never fabricated** — every citation shown is built
+  directly from an actual retrieved passage (filename, excerpt text,
+  similarity score) — there's no path that invents a citation.
+- **Structured paper summaries** — Executive Summary, Research Objective,
+  Methodology, Key Findings, Conclusion, Future Work, generated from the
+  paper's own indexed content (capped to a configurable context size for
+  very long papers).
+- **Paper management** — list, delete, and re-index papers, with live
+  chunk counts and status.
+- **Reuses the existing configurable LLM provider** — no direct
+  Groq/OpenAI/Gemini SDK calls anywhere in this module.
+- **Sidebar**: Chat, Analytics, About Module, Medical Knowledge Assistant,
+  Dynamic Knowledge Base, Research Assistant (plus remaining "coming
+  soon" placeholders).
+
+### Upload workflow
+
+Identical shape to Milestone 3's (validate → hash → dedupe check →
+extract → chunk → embed new chunks only → index incrementally → persist
+metadata), but PDF-only and using the `research_papers` SQLite table
+instead of `knowledge_documents`.
+
+### Question answering
+
+```
+Question -> retrieve top-K relevant passages (embeds query, searches
+FAISS) -> build a prompt containing only those passages -> existing
+configurable LLM provider -> answer + citations
+```
+
+If no chunk meets the similarity threshold, the LLM is told explicitly
+that no relevant context was found, so it says so rather than guessing —
+the same grounding pattern as Milestone 2's medical assistant.
+
+### Research summarization
+
+Selecting a paper and clicking "Generate Summary" retrieves **all** of
+that paper's indexed chunks (not just the top-K similarity matches used
+for Q&A) via `get_chunks_for_document()`, concatenates them up to a
+configurable character budget (`RESEARCH_MAX_SUMMARY_CONTEXT_CHARS`,
+default 16,000), and asks the LLM to produce the six required sections
+strictly from that content.
+
+### Citation support
+
+Every Q&A answer and every retrieved passage displays: the source
+paper's filename, the actual retrieved excerpt, and its similarity
+score — all three always come from a real `RetrievedPassage`, never
+synthesized.
+
+### Paper management
+
+- **List**: filename, upload date, chunk count, status.
+- **Delete** (🗑️): removes the paper's vectors (via `remove_ids()`),
+  its stored extracted text, and its metadata row — verified directly
+  that this never touches any other paper's vectors or search results.
+- **Re-index** (🔄): re-chunks and re-embeds one paper from its stored
+  text (e.g. after a config change), without needing the original PDF
+  again.
+
+### Running the application
+
+```bash
+streamlit run app.py
+```
+
+Open the sidebar → **📄 Research Assistant**, upload a PDF, then try the
+Question Answering, Paper Summary, and Paper Management sections.
+
+### Future improvements
+
+- Multi-paper comparative Q&A ("how do these two papers' methodologies differ?")
+- Section-aware chunking (detect Abstract/Methods/Results boundaries)
+- Export summaries as PDF/Markdown
+- Support for arXiv URL ingestion, not just local file upload
+
 ## Project structure
 
 ```
@@ -402,12 +501,23 @@ advanced-genai-chatbot/
 │   │   ├── updater.py                         # "Update Index" (pending documents only)
 │   │   ├── manager.py                          # Upload/search/stats orchestration
 │   │   └── knowledge_chat.py                    # Streamlit page
-│   ├── research/                      # Not yet implemented
+│   ├── research/                      # Milestone 4: implemented
+│   │   ├── config.py                     # Reuses KnowledgeBaseConfig type (composition, not duplication)
+│   │   ├── parser.py                      # PDF-only validation; reuses knowledge_base's extract_text
+│   │   ├── chunker.py                      # Reuses chunk_document/KnowledgeChunk from knowledge_base
+│   │   ├── embeddings.py                    # Reuses KnowledgeEmbeddingGenerator directly
+│   │   ├── vector_store.py                   # Subclasses KnowledgeVectorStore; adds delete_document()
+│   │   ├── retriever.py                       # Similarity-filtered retrieval + retrieve_from_paper()
+│   │   ├── citation.py                         # Builds citation objects from retrieved passages
+│   │   ├── summarizer.py                        # Six-section structured paper summaries
+│   │   ├── manager.py                            # Upload/retrieve/summarize/delete/reindex orchestration
+│   │   ├── research_pipeline.py                   # Grounded question-answering
+│   │   └── research_chat.py                        # Streamlit page
 │   ├── multimodal/                     # Not yet implemented
 │   └── multilingual/                    # Not yet implemented
 ├── utils/
 │   ├── logger.py                    # Shared logging setup
-│   ├── storage.py                     # SQLite data access (messages, sentiment, medical_queries, knowledge_documents)
+│   ├── storage.py                     # SQLite data access (messages, sentiment, medical_queries, knowledge_documents, research_papers)
 │   ├── llm_client.py                    # Unified, provider-agnostic chat completion client
 │   └── providers/                         # LLM provider abstraction
 │       ├── base_provider.py                 # Abstract interface + shared exceptions
@@ -423,7 +533,8 @@ advanced-genai-chatbot/
     ├── test_navigation.py
     ├── test_sentiment.py                 # Milestone 1
     ├── test_medical.py                    # Milestone 2
-    └── test_knowledge_base.py               # Milestone 3
+    ├── test_knowledge_base.py               # Milestone 3
+    └── test_research.py                       # Milestone 4
 ```
 
 ## Running tests
@@ -432,18 +543,24 @@ advanced-genai-chatbot/
 pytest tests/ -v
 ```
 
-114 tests currently pass: config defaults, the storage layer (sentiment
-columns, medical_queries table, knowledge_documents table, summary
-queries), the LLM provider abstraction, the navigation registry, the
-sentiment analyzer, the medical RAG pipeline (dataset parsing, chunking,
-embeddings with fallback, vector store build/cache/search, retrieval
-filtering, prompt construction, end-to-end answer generation with mocked
-LLM calls), and the dynamic knowledge base (file validation, text
-extraction for PDF/TXT/MD, chunking, the hashing fallback embedder,
-incremental vector-store add/persist/rebuild, duplicate detection, and
-the full upload/search/update/rebuild manager workflow). All tests use
-small synthetic data -- none require downloading the full medical
-dataset or network access.
+156 tests currently pass: config defaults, the storage layer (sentiment
+columns, medical_queries table, knowledge_documents table,
+research_papers table, summary queries), the LLM provider abstraction,
+the navigation registry, the sentiment analyzer, the medical RAG
+pipeline (dataset parsing, chunking, embeddings with fallback, vector
+store build/cache/search, retrieval filtering, prompt construction,
+end-to-end answer generation with mocked LLM calls), the dynamic
+knowledge base (file validation, text extraction for PDF/TXT/MD,
+chunking, the hashing fallback embedder, incremental vector-store
+add/persist/rebuild, duplicate detection, and the full
+upload/search/update/rebuild manager workflow), and the research
+assistant (PDF-only validation, chunking/embedding/retrieval reuse,
+**per-paper deletion leaving other papers' vectors untouched** --
+verified both at the vector-store level and the full manager level --
+re-indexing, structured summarization, and grounded citation-backed
+question answering with mocked LLM calls). All tests use small
+synthetic data (including reportlab-generated test PDFs) -- none
+require downloading the full medical dataset or network access.
 
 ## Dependencies
 
@@ -454,8 +571,13 @@ dashboard); `sentence-transformers` + `faiss-cpu` + `langchain` +
 `langchain-text-splitters` + `scikit-learn` (Milestone 2 RAG pipeline;
 scikit-learn also powers Milestone 3's incremental-friendly hashing
 fallback embedder); `pypdf` (Milestone 3 PDF text extraction -- the only
-new dependency this milestone needed, since embeddings/vector
+new dependency that milestone needed, since embeddings/vector
 search/chunking all reuse Milestone 2's already-installed libraries).
+**Milestone 4 (Research Assistant) needed zero new dependencies** --
+its PDF parsing, chunking, and embedding pipeline all import directly
+from `modules/knowledge_base`, and its one genuinely new capability
+(per-paper deletion) uses a FAISS method (`remove_ids()`) already
+available in the already-installed `faiss-cpu` package.
 `google-generativeai` (Gemini) and remaining milestone-specific
 dependencies (Pillow, OpenCV) stay commented out until actually needed.
 
@@ -517,3 +639,18 @@ dependencies (Pillow, OpenCV) stay commented out until actually needed.
   status (e.g. a partial failure); since `process_upload()` already
   indexes successfully-processed documents immediately, there's normally
   nothing for it to do — this is by design, not a bug.
+- The Research Assistant only accepts PDF (per the PRD); unlike the
+  Dynamic Knowledge Base, TXT/Markdown papers aren't supported.
+- Like Milestones 2 and 3, the research assistant's Sentence Transformers
+  backend needs network access on first run; it falls back to the same
+  stateless hashing embedder otherwise (verified directly, including that
+  a deleted paper's vectors are correctly excluded from search results
+  under the fallback backend too).
+- Paper summarization caps context at `RESEARCH_MAX_SUMMARY_CONTEXT_CHARS`
+  (default 16,000 characters) and `RESEARCH_MAX_SUMMARY_CHUNKS` (default
+  40); extremely long papers may have later sections excluded from the
+  summary. Both are configurable via `.env`.
+- Re-indexing a paper requires its extracted text to still be stored on
+  disk (saved automatically at upload time); if that file was manually
+  deleted outside the app, re-index will fail with a clear error rather
+  than silently doing nothing.

@@ -1,8 +1,39 @@
 """
-Placeholder for the Research Paper Assistant milestone.
+modules/research
 
-Not yet implemented. This module will be built out once the
-corresponding milestone PRD is provided. Intentionally left as an
-empty, importable package so app.py navigation can reference it
-without error before the real implementation lands.
+Milestone 4: Research Assistant.
+
+Public API:
+    ResearchManager       - upload/retrieve/summarize/manage orchestration
+    ResearchRAGPipeline    - grounded question-answering
+    ResearchAnswer          - result of pipeline.answer()
+    PaperSummary             - result of manager.summarize()
+    Citation                  - a single citation in an answer/summary
+    render_research_assistant_page - the Streamlit page
+    InvalidPaperError          - non-PDF/oversized/empty upload
+    ParsingError                 - text extraction failure
+    VectorStoreError               - index build/load/search/delete failure
 """
+
+from .citation import Citation
+from .manager import PaperRecord, ResearchManager, ResearchStats, UploadResult
+from .parser import InvalidPaperError, ParsingError
+from .research_chat import render_research_assistant_page
+from .research_pipeline import ResearchAnswer, ResearchRAGPipeline
+from .summarizer import PaperSummary
+from .vector_store import VectorStoreError
+
+__all__ = [
+    "ResearchManager",
+    "ResearchRAGPipeline",
+    "ResearchAnswer",
+    "PaperSummary",
+    "Citation",
+    "UploadResult",
+    "PaperRecord",
+    "ResearchStats",
+    "render_research_assistant_page",
+    "InvalidPaperError",
+    "ParsingError",
+    "VectorStoreError",
+]
