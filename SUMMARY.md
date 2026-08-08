@@ -1,48 +1,49 @@
 # SUMMARY
 
-**Task**: Implement Milestone 4 (Research Assistant) on the existing
-foundation + Milestone 1 + LLM Provider Abstraction + Milestone 2 +
-Milestone 3, per the Milestone 4 PRD. Scope: `modules/research/`,
-`components/`, `database/`, `utils/`, `README.md`, `requirements.txt`,
-`app.py`.
+**Task**: Bug fix -- replace the placeholder Gemini provider
+(`utils/providers/gemini_provider.py`) with a production implementation,
+per the Bug Fix PRD. Scope: that one file, plus `requirements.txt`,
+`README.md`, and tests. Explicitly must NOT touch Groq/OpenAI or
+redesign the architecture.
 
-**Stack**: PDF upload -> reuses Milestone 3's `extract_text()` directly
--> reuses Milestone 3's `chunk_document()`/`KnowledgeChunk` directly ->
-reuses Milestone 3's `KnowledgeEmbeddingGenerator` directly (Sentence
-Transformers primary, hashing fallback) -> `ResearchVectorStore`
-**subclasses** Milestone 3's `KnowledgeVectorStore` (inherits incremental
-add/save/load/search unchanged) -> existing configurable LLM provider
-for grounded Q&A and summarization.
+**Root cause**: the previous provider imported `google.generativeai`
+(Google's older, now-legacy Gemini SDK), which was never an installed
+dependency -- only commented out in `requirements.txt`. Every call hit
+the `ImportError` branch and raised the "future-ready placeholder"
+message unconditionally. Installing that legacy package would have
+"worked" but left the project on a deprecated SDK; Google's current,
+actively maintained SDK is `google-genai`, which this fix uses instead.
+
+**Fix**: full rewrite of `gemini_provider.py` using `google-genai`'s
+actual API (`genai.Client().models.generate_content()`), verified
+directly against the real SDK's types before writing any code (not
+guessed). Implements: client init, API key validation, text generation,
+vision generation, timeout handling (via `HttpOptions`), retry handling
+(via `HttpRetryOptions`), and real error mapping (auth/rate-limit/
+timeout/connection, translated from the SDK's actual `APIError`/`httpx`
+exception types) -- matching the same interface every other provider
+already implements, so zero changes were needed anywhere else in the app.
 
 **Included**:
-- Maximal reuse per the PRD's explicit "avoid duplicate implementations" instruction: parser, chunker, and embeddings modules are thin re-exports of Milestone 3's code, not reimplementations
-- The one genuinely new capability: **per-paper deletion**. `ResearchVectorStore.delete_document()` uses FAISS's native `remove_ids()`, added via subclassing rather than a parallel vector store implementation
-- Verified directly (not just asserted): deleting one paper never touches another paper's vectors or search results
-- Grounded, citation-backed question answering -- strict "answer only from retrieved excerpts, refuse to guess" system prompt
-- Six-section structured paper summarization (Executive Summary, Research Objective, Methodology, Key Findings, Conclusion, Future Work), using ALL of a paper's chunks (not just top-K), capped to a configurable context budget
-- Citations built only from real retrieved passages -- never fabricated
-- Paper management: list, delete (with cascade: vectors + stored text + metadata), re-index from stored text
-- New, separate `research_papers` SQLite table (additive, doesn't touch `messages`/`medical_queries`/`knowledge_documents`) -- first milestone needing a delete operation at the storage layer too
-- Reuses the existing configurable LLM provider -- zero direct Groq/OpenAI/Gemini SDK calls
-- Explicit error handling: non-PDF, empty file, corrupted PDF, duplicate upload, embedding/vector-store failure, missing API key, LLM failure, paper-not-found (summarize/delete/reindex) -- all friendly messages, never crashes
-- **Zero new dependencies** -- confirmed and documented in `requirements.txt`
-- 156 tests total (51 new/updated for this milestone), all passing
-- Full app smoke-tested; Milestones 1-3 and the LLM Provider Abstraction confirmed regression-free
+- `generate()` and `generate_with_image()` both fully implemented, no remaining placeholder exceptions
+- Every previously-required error case handled: missing API key, invalid API key, missing SDK, timeout, rate limit, network errors, unsupported vision model
+- `supports_vision()` kept (was already correct) -- automatic detection based on model name
+- Retry handling via the SDK's built-in mechanism, not hand-rolled
+- 19 new tests (`tests/test_gemini_provider.py`) covering configuration, vision detection, request construction (mocked against real SDK types), and every error-mapping branch
+- One existing stale test fixed (it depended on the package genuinely being absent, which is no longer guaranteed) -- now uses a deterministic simulated ImportError instead
+- 215/215 tests passing total -- Groq, OpenAI, and every prior milestone confirmed completely unaffected
+- Removed every "placeholder"/"future-ready" reference to Gemini across README.md and REQUIREMENTS.md, replaced with accurate current status + root-cause documentation
 
-**Real-world verification** (not just unit tests): generated real PDFs with reportlab, processed end-to-end through the manager; specifically verified the new deletion capability -- uploaded two papers, deleted one, confirmed the other remained fully searchable with untouched vectors, confirmed deleting a non-existent paper returns False rather than erroring. Also independently verified FAISS's remove_ids() API behavior in isolation before committing to the subclassing design.
+**Verified live** (not just unit tests): full `utils/llm_client.py` flow (validate -> vision-check -> chat/vision completion) with Gemini as the active provider, using mocked SDK responses shaped like the real SDK's types; full app boot with `LLM_PROVIDER=gemini` set via a real `.env` file -- HTTP 200, no placeholder exception, no errors.
 
-**Not touched**: `modules/multimodal/`, `modules/multilingual/` -- still empty placeholders. `modules/medical/`, `modules/knowledge_base/`, `modules/sentiment/` untouched (only imported from, never modified). Root `config.py` intentionally untouched, same reasoning as Milestones 2-3.
+**Known limitation**: this sandbox has no network egress to Google's Gemini API endpoint, so a live authenticated API round-trip could not be performed here. Recommend one final live smoke test with a real `GEMINI_API_KEY` before considering this fully closed -- everything up to the actual network call has been verified as correctly constructed against the real SDK.
 
-**Not included / needs attention before production**:
-- PDF-only (per PRD) -- no TXT/Markdown paper support
-- Sentence Transformers needs network access on first run (falls back gracefully otherwise -- verified, including that deletion behaves correctly under the fallback backend too)
-- Summary context capped at ~16,000 chars / 40 chunks by default (configurable) -- very long papers may have later sections excluded
-- No authentication on the Streamlit app; no rate limiting
+**Not touched**: `openai_provider.py`, `groq_provider.py`, `base_provider.py` (interface unchanged -- no new methods needed), `modules/multimodal/`, or any other milestone's code.
 
 **How to run**:
 ```bash
-pip install -r requirements.txt   # no new packages vs. Milestone 3
-cp .env.example .env   # set LLM_PROVIDER + that provider's key
-streamlit run app.py   # sidebar -> Research Assistant
+pip install -r requirements.txt   # installs google-genai
+# in .env: LLM_PROVIDER=gemini, GEMINI_API_KEY=..., LLM_MODEL=gemini-1.5-flash
+streamlit run app.py
 pytest tests/ -v
 ```

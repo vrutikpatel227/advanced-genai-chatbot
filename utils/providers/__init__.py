@@ -18,6 +18,7 @@ from .base_provider import (
     ProviderError,
     ProviderRateLimitError,
     ProviderTimeoutError,
+    VisionNotSupportedError,
 )
 from .gemini_provider import GeminiProvider
 from .groq_provider import GroqProvider
@@ -54,6 +55,7 @@ __all__ = [
     "ProviderRateLimitError",
     "ProviderTimeoutError",
     "ProviderConnectionError",
+    "VisionNotSupportedError",
     "build_provider",
     "SUPPORTED_PROVIDERS",
 ]

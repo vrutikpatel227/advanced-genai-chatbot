@@ -5,10 +5,14 @@ pytest>=8.2,<9.0
 
 # --- LLM Provider Abstraction ---
 # Only the SDK for your selected LLM_PROVIDER actually needs to be
-# installed/working at runtime, but both are listed here since either
+# installed/working at runtime, but all three are listed here since any
 # can be selected via .env with no code changes.
 openai>=1.40,<2.0
 groq>=0.9,<1.0
+# google-genai is Google's current, actively maintained Gemini SDK --
+# NOT the older, now-legacy `google-generativeai` package (do not
+# install that one; the Gemini provider does not use it).
+google-genai>=1.0,<3.0
 
 # --- Milestone 1: Sentiment Analysis ---
 transformers>=4.42,<5.0
@@ -38,10 +42,21 @@ pypdf>=4.2,<5.0
 # all import directly from modules.knowledge_base rather than adding
 # duplicate packages.
 
+# --- Milestone 5: Multimodal AI ---
+# Pillow was already installed transitively via Streamlit itself; it's
+# pinned explicitly here now since modules/multimodal/image_loader.py
+# imports it directly for image validation. No vision-model SDK is
+# needed beyond the already-installed openai/groq packages -- image
+# input uses the same chat-completions endpoint with an image_url
+# content part, no separate vision API. OpenCV (opencv-python-headless)
+# was intentionally NOT added: this milestone's actual scope (validate,
+# preview, send to a vision-capable LLM) doesn't need it -- it's listed
+# in the Master PRD's long-term tech stack for possible future,
+# more advanced image processing, not something this milestone requires.
+pillow>=10.4,<11.0
+
 # --- Future milestone dependencies ---
 # Uncomment the relevant lines when that milestone's PRD is implemented,
 # to keep the installed footprint matching what's actually built.
 #
-# google-generativeai>=0.7,<1.0          # LLM Provider: Gemini (placeholder implementation, not yet verified live)
-# pillow>=10.4,<11.0                       # Milestone: Multimodal AI
-# opencv-python-headless>=4.10,<5.0         # Milestone: Multimodal AI
+# opencv-python-headless>=4.10,<5.0        # Not needed by Milestone 5's actual scope; reserved if a future milestone needs it

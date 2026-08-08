@@ -30,6 +30,12 @@ similar to knowledge_documents, but kept as its own table since the
 Research Assistant's paper management (delete, re-index) is a distinct
 feature surface from the Knowledge Base's document management.
 
+Milestone 5 (Multimodal AI) adds a final new, separate table --
+"multimodal_conversations" -- storing each image analysis exchange
+(image filename, user prompt, AI response, timestamp). No vector
+store/embeddings are involved in this milestone, so this table is
+the only new storage this milestone needs.
+
 All queries are parameterized -- never string-interpolate user input
 into SQL.
 """
@@ -97,6 +103,18 @@ CREATE TABLE IF NOT EXISTS research_papers (
 
 CREATE INDEX IF NOT EXISTS idx_research_papers_hash ON research_papers(content_hash);
 CREATE INDEX IF NOT EXISTS idx_research_papers_status ON research_papers(status);
+
+CREATE TABLE IF NOT EXISTS multimodal_conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    image_filename TEXT NOT NULL,
+    user_prompt TEXT NOT NULL,
+    ai_response TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_multimodal_session ON multimodal_conversations(session_id);
+CREATE INDEX IF NOT EXISTS idx_multimodal_created ON multimodal_conversations(created_at);
 """
 
 # Additive columns for Milestone 1 (Sentiment Analysis). Kept as a
@@ -450,3 +468,52 @@ def get_research_chunk_total() -> int:
         cursor = conn.execute("SELECT COALESCE(SUM(chunk_count), 0) as total FROM research_papers")
         row = cursor.fetchone()
         return int(row["total"]) if row else 0
+
+
+# --- Milestone 5: Multimodal AI -----------------------------------------------------
+
+
+def save_multimodal_conversation(
+    session_id: str,
+    image_filename: str,
+    user_prompt: str,
+    ai_response: str,
+) -> None:
+    """Persist one image-analysis exchange: which image, what was
+    asked, and what the vision model answered."""
+    if not session_id:
+        raise ValueError("session_id is required")
+    if not image_filename:
+        raise ValueError("image_filename is required")
+    if not user_prompt or not user_prompt.strip():
+        raise ValueError("user_prompt is required")
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO multimodal_conversations
+                (session_id, image_filename, user_prompt, ai_response, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                session_id, image_filename, user_prompt, ai_response,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+
+
+def get_multimodal_conversations(session_id: str) -> list[sqlite3.Row]:
+    """All image-analysis exchanges for a session, oldest first."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT * FROM multimodal_conversations WHERE session_id = ? ORDER BY id ASC",
+            (session_id,),
+        )
+        return cursor.fetchall()
+
+
+def get_multimodal_conversation_count() -> int:
+    with get_connection() as conn:
+        cursor = conn.execute("SELECT COUNT(*) as count FROM multimodal_conversations")
+        row = cursor.fetchone()
+        return int(row["count"]) if row else 0

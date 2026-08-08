@@ -101,3 +101,41 @@ def test_switching_provider_changes_active_provider(monkeypatch):
     llm_client._get_provider.cache_clear()
     _patch_llm_config(monkeypatch, provider="openai", openai_api_key="sk-fake-key")
     assert llm_client._get_provider().name == "openai"
+
+
+# --- Milestone 5: vision-aware functions -------------------------------------------
+
+
+def test_is_vision_supported_true_for_openai_default_model(monkeypatch):
+    _patch_llm_config(monkeypatch, provider="openai", openai_api_key="sk-fake-key", model="")
+    assert llm_client.is_vision_supported() is True
+
+
+def test_is_vision_supported_false_for_groq_default_model(monkeypatch):
+    _patch_llm_config(monkeypatch, provider="groq", groq_api_key="fake-groq-key", model="")
+    assert llm_client.is_vision_supported() is False
+
+
+def test_is_vision_supported_true_for_groq_explicit_vision_model(monkeypatch):
+    _patch_llm_config(
+        monkeypatch, provider="groq", groq_api_key="fake-groq-key",
+        model="llama-3.2-11b-vision-preview",
+    )
+    assert llm_client.is_vision_supported() is True
+
+
+def test_is_vision_supported_false_when_not_configured(monkeypatch):
+    _patch_llm_config(monkeypatch, provider="groq", groq_api_key="")
+    assert llm_client.is_vision_supported() is False
+
+
+def test_get_vision_completion_raises_vision_not_supported_for_groq_default(monkeypatch):
+    _patch_llm_config(monkeypatch, provider="groq", groq_api_key="fake-groq-key", model="")
+    with pytest.raises(llm_client.VisionNotSupportedError):
+        llm_client.get_vision_completion("describe this", b"fake image bytes", "image/png")
+
+
+def test_get_vision_completion_raises_configuration_error_without_key(monkeypatch):
+    _patch_llm_config(monkeypatch, provider="openai", openai_api_key="")
+    with pytest.raises(llm_client.LLMConfigurationError):
+        llm_client.get_vision_completion("describe this", b"fake image bytes", "image/png")

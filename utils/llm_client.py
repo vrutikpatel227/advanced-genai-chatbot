@@ -12,6 +12,13 @@ Public API is intentionally unchanged from before this refactor
 (ChatMessage, is_configured(), get_chat_completion(),
 LLMConfigurationError, LLMRequestError) so no calling code
 (app.py, components/) needed to change.
+
+Milestone 5 (Multimodal AI) adds is_vision_supported() and
+get_vision_completion() -- vision-capable equivalents of
+is_configured()/get_chat_completion() that check whether the currently
+selected provider *and model* support image input before calling it,
+raising a friendly VisionNotSupportedError rather than a confusing
+provider-level failure if not.
 """
 
 from __future__ import annotations
@@ -29,6 +36,7 @@ from utils.providers import (
     ProviderError,
     ProviderRateLimitError,
     ProviderTimeoutError,
+    VisionNotSupportedError as _ProviderVisionNotSupportedError,
     build_provider,
 )
 
@@ -50,6 +58,12 @@ class LLMConfigurationError(RuntimeError):
 class LLMRequestError(RuntimeError):
     """Raised when the LLM API call itself fails: network failure,
     rate limit, timeout, or any other provider-side error."""
+
+
+class VisionNotSupportedError(RuntimeError):
+    """Raised when the currently selected provider/model doesn't
+    support image input. Callers (the Multimodal AI page) show this as
+    a friendly "please select a vision-capable model" message."""
 
 
 @dataclass(frozen=True)
@@ -104,6 +118,18 @@ def is_configured() -> bool:
     return is_valid
 
 
+def is_vision_supported() -> bool:
+    """Whether the currently selected provider AND model support image
+    input. UI should check this before calling get_vision_completion()
+    to show a friendly message instead of an error."""
+    is_valid, _ = validate_configuration()
+    if not is_valid:
+        return False
+    provider = _get_provider()
+    model_name = llm_config.model or provider.default_model
+    return provider.supports_vision(model_name)
+
+
 def get_chat_completion(messages: list[ChatMessage]) -> str:
     """Send a chat completion request through the currently selected
     provider and return the assistant's text reply.
@@ -151,6 +177,68 @@ def get_chat_completion(messages: list[ChatMessage]) -> str:
         elapsed = time.monotonic() - start
         logger.error(
             "LLM request failed with an unexpected error | provider=%s | elapsed=%.2fs | %s",
+            provider.name, elapsed, exc,
+        )
+        raise LLMRequestError(f"Unexpected error: {exc}") from exc
+
+
+def get_vision_completion(prompt: str, image_bytes: bytes, image_mime_type: str) -> str:
+    """Send a vision request (text prompt + image) through the
+    currently selected provider and return the assistant's text reply.
+
+    Raises LLMConfigurationError if the provider is invalid or missing
+    its API key, VisionNotSupportedError if the selected provider/model
+    doesn't support image input, and LLMRequestError if the call itself
+    fails. Callers (the Multimodal AI page) catch these and show a
+    friendly message rather than letting the app crash.
+    """
+    is_valid, message = validate_configuration()
+    if not is_valid:
+        raise LLMConfigurationError(message)
+
+    provider = _get_provider()
+    model_name = llm_config.model or provider.default_model
+
+    if not provider.supports_vision(model_name):
+        raise VisionNotSupportedError(
+            f"The currently selected model ('{model_name}' on provider "
+            f"'{provider.name}') does not support image analysis. Please "
+            f"select a vision-capable model."
+        )
+
+    start = time.monotonic()
+    try:
+        reply = provider.generate_with_image(
+            prompt,
+            image_bytes,
+            image_mime_type,
+            model=model_name,
+            temperature=llm_config.temperature,
+            max_tokens=llm_config.max_tokens,
+            timeout=llm_config.request_timeout,
+        )
+        elapsed = time.monotonic() - start
+        logger.info(
+            "Vision request succeeded | provider=%s | model=%s | elapsed=%.2fs",
+            provider.name, model_name, elapsed,
+        )
+        return reply
+    except _ProviderVisionNotSupportedError as exc:
+        raise VisionNotSupportedError(str(exc)) from exc
+    except ProviderAuthError as exc:
+        logger.error("Vision configuration error | provider=%s | %s", provider.name, exc)
+        raise LLMConfigurationError(str(exc)) from exc
+    except (ProviderRateLimitError, ProviderTimeoutError, ProviderConnectionError, ProviderError) as exc:
+        elapsed = time.monotonic() - start
+        logger.error(
+            "Vision request failed | provider=%s | elapsed=%.2fs | %s",
+            provider.name, elapsed, exc,
+        )
+        raise LLMRequestError(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - final safety net: never let a raw error escape
+        elapsed = time.monotonic() - start
+        logger.error(
+            "Vision request failed with an unexpected error | provider=%s | elapsed=%.2fs | %s",
             provider.name, elapsed, exc,
         )
         raise LLMRequestError(f"Unexpected error: {exc}") from exc

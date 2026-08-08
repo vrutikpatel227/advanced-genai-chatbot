@@ -60,8 +60,8 @@ PAGES: list[NavPage] = [
     NavPage(
         key="multimodal",
         label="🖼️ Multimodal AI",
-        implemented=False,
-        description="Will accept image input alongside text.",
+        implemented=True,
+        description="Upload an image and ask questions about it using a vision-capable LLM.",
     ),
     NavPage(
         key="multilingual",
@@ -83,3 +83,4 @@ def get_page(key: str) -> NavPage:
         if page.key == key:
             return page
     raise KeyError(f"Unknown page key: {key!r}")
+    

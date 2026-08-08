@@ -5,8 +5,9 @@ across independent internship milestones on top of one shared codebase.
 
 **Status: Milestone 1 (Sentiment Analysis) complete. Milestone 2 (Medical
 Knowledge Assistant / RAG) complete. Milestone 3 (Dynamic Knowledge Base)
-complete. Milestone 4 (Research Assistant) complete. LLM Provider
-Abstraction (architectural enhancement, not a milestone) complete.**
+complete. Milestone 4 (Research Assistant) complete. Milestone 5
+(Multimodal AI) complete. LLM Provider Abstraction (architectural
+enhancement, not a milestone) complete.**
 
 Each milestone (Sentiment Analysis, Medical RAG, Dynamic Knowledge Base,
 Research Paper Assistant, Multimodal AI, Multilingual Support, Conversation
@@ -25,15 +26,13 @@ milestone): the app can now switch between LLM providers through a single
 |---|---|---|
 | **Groq** | ✅ Fully working | `llama-3.1-8b-instant` |
 | **OpenAI** | ✅ Fully working | `gpt-4o-mini` |
-| **Gemini** | 🔶 Future-ready placeholder (see note below) | `gemini-1.5-flash` |
+| **Gemini** | ✅ Fully working | `gemini-1.5-flash` |
 
-> **Gemini note:** the provider class is fully wired into the same interface
-> as Groq/OpenAI and can be selected today, but `google-generativeai` isn't
-> installed as a hard dependency yet since this path hasn't been verified
-> against the live API. If actually invoked without the package installed,
-> it raises a clear, friendly error rather than crashing. To activate for
-> real: `pip install google-generativeai` and uncomment it in
-> `requirements.txt`.
+> **Gemini note:** uses Google's current `google-genai` SDK (the actively
+> maintained successor to the older, now-legacy `google-generativeai`
+> package — this project never uses that legacy package). Supports both
+> text and vision requests. See "Bug Fix: Gemini Provider" below for the
+> history of why an earlier version of this provider didn't work.
 
 ### Environment configuration
 
@@ -69,7 +68,7 @@ utils/
     ├── base_provider.py           # Abstract LLMProvider interface + shared exceptions
     ├── openai_provider.py           # OpenAI implementation
     ├── groq_provider.py              # Groq implementation
-    ├── gemini_provider.py             # Gemini implementation (placeholder)
+    ├── gemini_provider.py             # Gemini implementation (production, text + vision)
     └── __init__.py                     # Provider registry (build_provider)
 ```
 
@@ -82,6 +81,38 @@ Missing API key, invalid `LLM_PROVIDER` value, network failure, rate limits,
 and timeouts are all caught and mapped to friendly messages; the app never
 crashes on a bad or missing configuration. Startup configuration (selected
 provider + whether it's valid) is logged automatically when the app starts.
+
+### Vision support (added in Milestone 5)
+
+The provider interface also supports image input: every `LLMProvider` has
+`supports_vision(model)` (capability check) and `generate_with_image()`
+(the actual vision call), both with safe defaults (`False` / a friendly
+`VisionNotSupportedError`) so providers that don't implement vision never
+crash the app — they just report "not supported." OpenAI (`gpt-4o`/`gpt-4o-mini`
+family), Groq (Llama-Vision models), and Gemini (`1.5`+/`2`+ family) all
+have working implementations. See the Milestone 5 section below for how
+this is used.
+
+### Bug Fix: Gemini Provider (post-Milestone 5)
+
+**Root cause**: the original Gemini provider was a placeholder that
+imported `google.generativeai` — Google's older, now-legacy Gemini SDK —
+which was never added as an installed dependency (only left commented out
+in `requirements.txt`). Every call hit the `ImportError` branch and raised
+the "future-ready placeholder" message, regardless of configuration.
+Installing that legacy package wouldn't have been the right fix either:
+Google has since released `google-genai`, a newer, actively maintained,
+unified SDK that supersedes it.
+
+**Fix**: replaced the placeholder with a full production implementation
+using `google-genai` (`genai.Client(...).models.generate_content(...)`),
+supporting both text and vision requests through the same interface every
+other provider already uses — no new methods, no interface changes.
+Includes real error mapping (auth, rate limit, timeout, connection errors,
+each translated from the SDK's actual exception types) and retry handling
+via the SDK's built-in `HttpRetryOptions`. `requirements.txt` now lists
+`google-genai` as an active dependency (not `google-generativeai`, which
+this project does not use).
 
 ## Milestone 1: Sentiment Analysis
 
@@ -460,6 +491,92 @@ Question Answering, Paper Summary, and Paper Management sections.
 - Export summaries as PDF/Markdown
 - Support for arXiv URL ingestion, not just local file upload
 
+## Milestone 5: Multimodal AI
+
+### Feature overview
+
+- **Upload an image** (PNG/JPG/JPEG), preview it, and ask questions about
+  it using a vision-capable LLM.
+- **Vision capability detection** — before analyzing, the app checks
+  whether the *currently selected provider and model* actually support
+  image input. If not, it shows a clear message ("The currently selected
+  model does not support image analysis. Please select a vision-capable
+  model.") instead of failing confusingly or crashing.
+- **Genuinely extends the LLM Provider Abstraction** — this was the one
+  piece of real infrastructure work this milestone needed: `LLMProvider`
+  gained two new methods, `supports_vision(model)` and
+  `generate_with_image()`, both with safe no-op defaults so every
+  existing provider keeps working unchanged. OpenAI and Groq have real
+  vision implementations (both use the same `image_url` content-part
+  format, since Groq's API is OpenAI-compatible). Gemini's vision
+  implementation was completed in a later bug-fix pass — see "Bug Fix:
+  Gemini Provider" earlier in this README.
+- **Suggested questions** — one-click buttons for "Describe this image,"
+  "What objects are visible?," "Explain what is happening," and
+  "Summarize this image."
+- **Conversation history** — every image filename, question, and AI
+  response is saved (SQLite), viewable in a "Previous Analyses" section
+  for the current session.
+- **Reuses the existing configurable LLM provider** — no direct
+  Groq/OpenAI/Gemini SDK calls anywhere in this module; provider
+  selection works exactly as it does for text chat.
+- **Sidebar**: Chat, Analytics, About Module, Medical Knowledge Assistant,
+  Dynamic Knowledge Base, Research Assistant, Multimodal AI (plus
+  remaining "coming soon" placeholders).
+
+### Supported image formats
+
+PNG, JPG, JPEG. Validation uses Pillow (already installed transitively
+via Streamlit) to confirm the uploaded bytes are an actual, openable
+image — not just trusting the file extension; a renamed non-image file
+is caught and rejected with a friendly message.
+
+### Vision model requirements
+
+Whether image analysis works depends entirely on which `LLM_PROVIDER` /
+`LLM_MODEL` you've configured:
+
+| Provider | Vision-capable models |
+|---|---|
+| OpenAI | `gpt-4o`, `gpt-4o-mini` (the default), `gpt-4-turbo`, and dated snapshots of these |
+| Groq | Llama-Vision models (e.g. `llama-3.2-11b-vision-preview`) — **not** the default `llama-3.1-8b-instant`, which is text-only |
+| Gemini | `gemini-1.5`+ / `gemini-2`+ family (the default `gemini-1.5-flash` qualifies) |
+
+If you're on Groq with its default text model, the Multimodal AI page will
+show the "please select a vision-capable model" notice until you set
+`LLM_MODEL` to a vision model in `.env`.
+
+### Image analysis workflow
+
+```
+Upload image
+  -> validate (format, size, genuine-image check via Pillow)
+  -> preview
+  -> vision-capability check (current provider + model)
+  -> user asks a question
+  -> existing configurable LLM provider, called with image + prompt
+  -> AI response displayed + saved to conversation history
+```
+
+### Running the application
+
+```bash
+streamlit run app.py
+```
+
+Open the sidebar → **🖼️ Multimodal AI**, upload a PNG/JPG/JPEG, then ask
+a question (or click one of the suggested questions) and click Analyze.
+
+### Future improvements
+
+- Multi-image comparison in a single request
+- Persist uploaded image files themselves (currently only filename +
+  Q&A text are stored, not the image bytes — an intentional
+  storage-efficiency choice matching the PRD's stated storage
+  requirements, but worth reconsidering if "view past images" becomes a need)
+- Bounding-box/object-detection style structured output, not just free text
+- Let users switch models directly from this page (currently `.env`-only)
+
 ## Project structure
 
 ```
@@ -513,28 +630,35 @@ advanced-genai-chatbot/
 │   │   ├── manager.py                            # Upload/retrieve/summarize/delete/reindex orchestration
 │   │   ├── research_pipeline.py                   # Grounded question-answering
 │   │   └── research_chat.py                        # Streamlit page
-│   ├── multimodal/                     # Not yet implemented
+│   ├── multimodal/                     # Milestone 5: implemented
+│   │   ├── config.py                     # Self-contained, env-driven config for this milestone
+│   │   ├── image_loader.py                # Validation via Pillow (genuine-image check, not just extension)
+│   │   ├── vision_client.py                # Thin wrapper around llm_client's vision functions
+│   │   ├── manager.py                       # Validate/analyze/history orchestration
+│   │   └── multimodal_chat.py                # Streamlit page
 │   └── multilingual/                    # Not yet implemented
 ├── utils/
 │   ├── logger.py                    # Shared logging setup
-│   ├── storage.py                     # SQLite data access (messages, sentiment, medical_queries, knowledge_documents, research_papers)
-│   ├── llm_client.py                    # Unified, provider-agnostic chat completion client
+│   ├── storage.py                     # SQLite data access (messages, sentiment, medical_queries, knowledge_documents, research_papers, multimodal_conversations)
+│   ├── llm_client.py                    # Unified, provider-agnostic chat completion client (+ vision functions)
 │   └── providers/                         # LLM provider abstraction
-│       ├── base_provider.py                 # Abstract interface + shared exceptions
-│       ├── openai_provider.py                 # OpenAI implementation
-│       ├── groq_provider.py                     # Groq implementation
-│       └── gemini_provider.py                     # Gemini implementation (placeholder)
+│       ├── base_provider.py                 # Abstract interface + shared exceptions + vision interface
+│       ├── openai_provider.py                 # OpenAI implementation (text + vision)
+│       ├── groq_provider.py                     # Groq implementation (text + vision)
+│       └── gemini_provider.py                     # Gemini implementation (production, text + vision)
 ├── data/, database/, uploads/, vector_store/, assets/, docs/
 └── tests/
     ├── test_config.py
     ├── test_storage.py
     ├── test_llm_client.py
-    ├── test_llm_providers.py           # LLM Provider Abstraction
+    ├── test_llm_providers.py           # LLM Provider Abstraction (+ vision capability tests)
     ├── test_navigation.py
     ├── test_sentiment.py                 # Milestone 1
     ├── test_medical.py                    # Milestone 2
     ├── test_knowledge_base.py               # Milestone 3
-    └── test_research.py                       # Milestone 4
+    ├── test_research.py                       # Milestone 4
+    ├── test_multimodal.py                       # Milestone 5
+    └── test_gemini_provider.py                     # Bug Fix: Gemini Provider
 ```
 
 ## Running tests
@@ -543,29 +667,42 @@ advanced-genai-chatbot/
 pytest tests/ -v
 ```
 
-156 tests currently pass: config defaults, the storage layer (sentiment
+215 tests currently pass: config defaults, the storage layer (sentiment
 columns, medical_queries table, knowledge_documents table,
-research_papers table, summary queries), the LLM provider abstraction,
-the navigation registry, the sentiment analyzer, the medical RAG
-pipeline (dataset parsing, chunking, embeddings with fallback, vector
-store build/cache/search, retrieval filtering, prompt construction,
-end-to-end answer generation with mocked LLM calls), the dynamic
-knowledge base (file validation, text extraction for PDF/TXT/MD,
-chunking, the hashing fallback embedder, incremental vector-store
-add/persist/rebuild, duplicate detection, and the full
-upload/search/update/rebuild manager workflow), and the research
-assistant (PDF-only validation, chunking/embedding/retrieval reuse,
-**per-paper deletion leaving other papers' vectors untouched** --
-verified both at the vector-store level and the full manager level --
-re-indexing, structured summarization, and grounded citation-backed
-question answering with mocked LLM calls). All tests use small
-synthetic data (including reportlab-generated test PDFs) -- none
-require downloading the full medical dataset or network access.
+research_papers table, multimodal_conversations table, summary
+queries), the LLM provider abstraction (including per-provider vision
+capability detection: OpenAI's `gpt-4o` family, Groq's Llama-Vision
+models, Gemini's `1.5`+ family, and confirming text-only default
+models like Groq's `llama-3.1-8b-instant` correctly report no vision
+support), the navigation registry, the sentiment analyzer, the medical
+RAG pipeline (dataset parsing, chunking, embeddings with fallback,
+vector store build/cache/search, retrieval filtering, prompt
+construction, end-to-end answer generation with mocked LLM calls), the
+dynamic knowledge base (file validation, text extraction for
+PDF/TXT/MD, chunking, the hashing fallback embedder, incremental
+vector-store add/persist/rebuild, duplicate detection, and the full
+upload/search/update/rebuild manager workflow), the research assistant
+(PDF-only validation, chunking/embedding/retrieval reuse, **per-paper
+deletion leaving other papers' vectors untouched**, re-indexing,
+structured summarization, and grounded citation-backed question
+answering with mocked LLM calls), and the multimodal assistant (image
+validation via Pillow -- including rejecting a renamed non-image file
+with a valid extension, not just trusting it -- vision-not-supported
+and missing-API-key error paths, and per-session conversation history
+isolation), and the production Gemini provider (request construction
+for both text and vision calls verified against the real `google-genai`
+SDK types, plus error mapping for auth/rate-limit/timeout/connection
+failures -- all via mocked SDK responses, since this dev sandbox has no
+network access to Google's API endpoint). All tests use small synthetic
+data (including reportlab-generated test PDFs and Pillow-generated test
+images) -- none require downloading the full medical dataset or network access.
 
 ## Dependencies
 
 `requirements.txt`: Streamlit, `python-dotenv`, `pytest` (foundation);
-`openai` + `groq` (LLM Provider Abstraction); `transformers` + `torch`
+`openai` + `groq` + `google-genai` (LLM Provider Abstraction — all three
+providers are fully working; `google-genai` is Google's current SDK, not
+the legacy `google-generativeai` package); `transformers` + `torch`
 (Milestone 1 sentiment model); `pandas` + `plotly` (Milestone 1 analytics
 dashboard); `sentence-transformers` + `faiss-cpu` + `langchain` +
 `langchain-text-splitters` + `scikit-learn` (Milestone 2 RAG pipeline;
@@ -577,9 +714,15 @@ search/chunking all reuse Milestone 2's already-installed libraries).
 its PDF parsing, chunking, and embedding pipeline all import directly
 from `modules/knowledge_base`, and its one genuinely new capability
 (per-paper deletion) uses a FAISS method (`remove_ids()`) already
-available in the already-installed `faiss-cpu` package.
-`google-generativeai` (Gemini) and remaining milestone-specific
-dependencies (Pillow, OpenCV) stay commented out until actually needed.
+available in the already-installed `faiss-cpu` package. `pillow`
+(Milestone 5 image validation -- was already installed transitively via
+Streamlit; pinned explicitly now that `modules/multimodal` imports it
+directly). Vision support itself needed **no new SDK** -- OpenAI, Groq,
+and Gemini's vision calls all use their already-installed clients, since
+image input is just a different content shape on the same underlying
+completions endpoint.
+`opencv-python-headless` (reserved, not required by Milestone 5's actual
+scope) stays commented out until actually needed.
 
 ## Development workflow
 
@@ -599,9 +742,6 @@ dependencies (Pillow, OpenCV) stay commented out until actually needed.
 - Chat replies require a real API key for whichever `LLM_PROVIDER` is
   selected — without one, the UI shows a clear configuration notice instead
   of crashing (sentiment analysis still works either way).
-- Gemini is a future-ready placeholder: selecting it without installing
-  `google-generativeai` raises a clear error rather than working live (see
-  the LLM Provider Abstraction section above).
 - The sidebar's "no API key" warning message (in `components/layout.py`)
   still mentions `OPENAI_API_KEY` specifically rather than naming whichever
   provider is actually selected — left as-is since this task's scope was
@@ -654,3 +794,14 @@ dependencies (Pillow, OpenCV) stay commented out until actually needed.
   disk (saved automatically at upload time); if that file was manually
   deleted outside the app, re-index will fail with a clear error rather
   than silently doing nothing.
+- Image analysis depends entirely on your configured provider/model
+  supporting vision — Groq's *default* model does not (its Llama-Vision
+  models do, but you must set `LLM_MODEL` explicitly); the page detects
+  this and shows a clear message rather than a confusing API error.
+- Uploaded images themselves aren't persisted to disk — only the
+  filename, question, and AI response are stored, matching the PRD's
+  stated conversation-storage requirements exactly. This means past
+  images can't be re-displayed from history, only their filename/Q&A text.
+- Conversation history in the Multimodal AI page is per-session (cleared
+  when the browser session ends), consistent with how session state
+  works elsewhere in the app (e.g. the base Chat page).

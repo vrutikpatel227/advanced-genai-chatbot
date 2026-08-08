@@ -271,3 +271,59 @@ def test_research_papers_do_not_affect_knowledge_documents_table():
     storage.save_research_paper("paper-1", "a.pdf", "hash-a", 3)
     assert storage.get_kb_document_count() == 0
     assert storage.get_research_paper_count() == 1
+
+
+# --- Milestone 5: Multimodal AI storage additions ---
+
+def test_save_and_retrieve_multimodal_conversation():
+    session_id = str(uuid.uuid4())
+    storage.save_multimodal_conversation(session_id, "photo.png", "Describe this image.", "A red square.")
+
+    history = storage.get_multimodal_conversations(session_id)
+    assert len(history) == 1
+    assert history[0]["image_filename"] == "photo.png"
+    assert history[0]["user_prompt"] == "Describe this image."
+    assert history[0]["ai_response"] == "A red square."
+
+
+def test_multimodal_conversation_requires_session_id():
+    with pytest.raises(ValueError):
+        storage.save_multimodal_conversation("", "photo.png", "Describe this.", "A square.")
+
+
+def test_multimodal_conversation_requires_image_filename():
+    with pytest.raises(ValueError):
+        storage.save_multimodal_conversation(str(uuid.uuid4()), "", "Describe this.", "A square.")
+
+
+def test_multimodal_conversation_requires_user_prompt():
+    with pytest.raises(ValueError):
+        storage.save_multimodal_conversation(str(uuid.uuid4()), "photo.png", "", "A square.")
+
+
+def test_multimodal_conversation_count():
+    s1, s2 = str(uuid.uuid4()), str(uuid.uuid4())
+    storage.save_multimodal_conversation(s1, "a.png", "Q1?", "A1")
+    storage.save_multimodal_conversation(s1, "b.png", "Q2?", "A2")
+    storage.save_multimodal_conversation(s2, "c.png", "Q3?", "A3")
+    assert storage.get_multimodal_conversation_count() == 3
+
+
+def test_multimodal_conversations_isolated_per_session():
+    s1, s2 = str(uuid.uuid4()), str(uuid.uuid4())
+    storage.save_multimodal_conversation(s1, "a.png", "Q1?", "A1")
+    storage.save_multimodal_conversation(s2, "b.png", "Q2?", "A2")
+
+    history1 = storage.get_multimodal_conversations(s1)
+    assert len(history1) == 1
+    assert history1[0]["image_filename"] == "a.png"
+
+
+def test_multimodal_conversations_do_not_affect_other_tables():
+    session_id = str(uuid.uuid4())
+    storage.save_multimodal_conversation(session_id, "a.png", "Q?", "A")
+    assert storage.get_message_count() == 0
+    assert storage.get_medical_query_count() == 0
+    assert storage.get_kb_document_count() == 0
+    assert storage.get_research_paper_count() == 0
+    assert storage.get_multimodal_conversation_count() == 1

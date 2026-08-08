@@ -42,8 +42,13 @@ def test_milestone4_page_is_implemented():
     assert research.implemented is True
 
 
+def test_milestone5_page_is_implemented():
+    multimodal = get_page("multimodal")
+    assert multimodal.implemented is True
+
+
 def test_remaining_milestone_pages_are_not_yet_implemented():
-    pending_keys = {"multimodal", "multilingual", "memory"}
+    pending_keys = {"multilingual", "memory"}
     for key in pending_keys:
         page = get_page(key)
         assert page.implemented is False, f"{key} should not be marked implemented yet"

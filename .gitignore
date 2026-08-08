@@ -32,3 +32,8 @@ data/research/*
 !data/research/.gitkeep
 vector_store/research/*
 !vector_store/research/.gitkeep
+
+# Milestone 5: user-uploaded images (Multimodal AI)
+# (uploaded by the user at runtime -- not committed)
+data/multimodal/*
+!data/multimodal/.gitkeep
