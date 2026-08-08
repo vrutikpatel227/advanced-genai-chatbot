@@ -26,7 +26,8 @@ milestone): the app can now switch between LLM providers through a single
 |---|---|---|
 | **Groq** | ✅ Fully working | `llama-3.1-8b-instant` |
 | **OpenAI** | ✅ Fully working | `gpt-4o-mini` |
-| **Gemini** | ✅ Fully working | `gemini-1.5-flash` |
+| **Gemini** | ✅ Fully working | `gemini-3.6-flash
+` |
 
 > **Gemini note:** uses Google's current `google-genai` SDK (the actively
 > maintained successor to the older, now-legacy `google-generativeai`
