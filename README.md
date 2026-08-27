@@ -806,3 +806,21 @@ scope) stays commented out until actually needed.
 - Conversation history in the Multimodal AI page is per-session (cleared
   when the browser session ends), consistent with how session state
   works elsewhere in the app (e.g. the base Chat page).
+
+
+
+## Submission Status
+
+### Completed Milestones
+- ✅ Milestone 1 — Sentiment Analysis
+- ✅ Milestone 2 — Medical Q&A / RAG
+- ✅ Milestone 3 — Dynamic Knowledge Base
+- ✅ Milestone 4 — Research Assistant
+- ✅ Milestone 5 — Multimodal AI
+
+### Not Included in This Submission
+- ⏭️ Milestone 6 — Multilingual AI
+
+Milestone 6 is intentionally not included in this submission.
+The current submission scope is Milestones 1–5, with all completed
+features fully integrated and tested.
