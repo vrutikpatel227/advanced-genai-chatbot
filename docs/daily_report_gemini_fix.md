@@ -8,7 +8,9 @@ Milestone 1, Milestone 2, Milestone 3, Milestone 4, Milestone 5) without
 regression.
 
 **Root Cause Analysis** (performed before writing any code, per the PRD's
-explicit "Important First Step"):
+explicit "Important First Step"):git add README.md
+git commit -m "Update Gemini model documentation"
+git push
 - Inspected `utils/providers/gemini_provider.py`: confirmed it was a
   placeholder. Every method (`generate`, `generate_with_image`) began
   with a `try: from google.generativeai import ...` that fell through to
